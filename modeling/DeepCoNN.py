@@ -1,206 +1,327 @@
-# %%
 import pandas as pd
 import numpy as np
-import gzip
 import os
-import re
-import nltk
-import tensorflow as tf, keras
-import matplotlib.pyplot as plt
-from datasets import load_dataset
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Embedding, Conv1D, GlobalMaxPooling1D, Dense, Concatenate
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+import json
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import gensim.downloader as downloader
+from keras.preprocessing.text import text_to_word_sequence
+from nltk import word_tokenize
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from torch.utils.data import DataLoader, TensorDataset
 
-# %%
-nltk.download('stopwords')
-nltk.download('wordnet')
+def get_list_dicts(file):
+    return [json.loads(line) for line in open(file, "rt")]
 
-# %%
-dataset = load_dataset(
-    "McAuley-Lab/Amazon-Reviews-2023",
-    "raw_review_Appliances",
-    split="full",
-    # streaming=True,  # Enables streaming mode (no large file download)
-    trust_remote_code=True
-)
+raw_data = get_list_dicts("/Users/rutvikdhopate/Downloads/Magazine_Subscriptions.jsonl")
+df = pd.DataFrame(raw_data).loc[:,['user_id','asin','rating','text']]
+# print(df.shape)
+df['text'] = df['text'].astype(str)
+df['text'] = df['text'].apply(lambda x: ' '.join(text_to_word_sequence(x)))
+df = df[df['text'].str.len() > 1]
+df.drop_duplicates(subset=['user_id','asin'], inplace=True)
+df.dropna(inplace=True)
+# print(df.shape)
+# print(df.head())
 
-# %%
-# Select only essential columns
-essential_columns = ["user_id", "asin", "text", "rating", "timestamp"]
-filtered_dataset = dataset.remove_columns([col for col in dataset.column_names if col not in essential_columns])
+# Idea is to group the reviews based on the users and the items as inputs for 2 parallel Neural Nets
+# grouped_u = df.groupby('user_id')['text'].apply(' <SEP> '.join).reset_index()
+# grouped_i = df.groupby('asin')['text'].apply(' <SEP> '.join).reset_index()
 
-# %%
-# Collect a sample of 100k 
-sample_data = []
-for i, sample in enumerate(filtered_dataset):
-    if i >= 100000:
-        break
-    sample_data.append(sample)
+grouped_u = df.groupby('user_id').agg(
+    text=('text', ' <SEP> '.join),  # Concatenate reviews for each user
+    avg_rating=('rating', 'mean')     # Calculate the average rating for each user
+).reset_index()
+grouped_i = df.groupby('asin').agg(
+    text=('text', ' <SEP> '.join),  # Concatenate reviews for each item
+    avg_rating=('rating', 'mean')     # Calculate the average rating for each item
+).reset_index()
 
-# Convert to Pandas DataFrame
-df = pd.DataFrame(sample_data)
+# Number of Unique Users and Unique Items in the dataset
+print(f"Unique Users: {grouped_u.shape[0]}, Unique Items: {grouped_i.shape[0]}")
 
-# %%
-df.to_csv("appliances_reviews.csv", header=True, index=False, encoding='utf-8')
+# Google Word-2-vec word embeddings - as mentioned in the paper
+embeds = downloader.load('word2vec-google-news-300')
 
-# %%
-# Data Preprocessing
+# Add 3 new tokens to the embeds dictionary
+'''
+    <UNK> - Representation for the word that is not a part of the pretrained embeddings
+    <SEP> - The reviews are concatenated by a token to indicate that there's a separation
+    <PAD> - 300 zeros to match the length of the sentence. 
+'''
 
-# According to DeepCoNN, user reviews and item reviews are expected to be inputs for 2 different NNs
+embeds['<UNK>'] = np.random.randn(300).astype(np.float32)
+embeds['<SEP>'] = np.random.randn(300).astype(np.float32)
+embeds['<PAD>'] = np.zeros(300, dtype=np.float32)
 
-user_reviews = df.groupby("user_id")["text"].apply(lambda x: " ".join(x)).reset_index()
-user_reviews.rename(columns={"text": "user_review"}, inplace=True)
-
-item_reviews = df.groupby("asin")["text"].apply(lambda x: " ".join(x)).reset_index()
-item_reviews.rename(columns={"text": "item_review"}, inplace=True)
-
-df = df.merge(user_reviews, on="user_id", how="left")
-df = df.merge(item_reviews, on="asin", how="left")
-
-# %%
-df.head()
-
-# %%
-lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words("english"))
-
-def clean_text(text):
-    if isinstance(text, str):  # Check if text is valid
-        text = text.lower()  # Convert to lowercase
-        text = re.sub(r"[^a-z0-9]", " ", text)  # Remove special characters
-        text = " ".join([word for word in text.split() if word not in stop_words])  # Remove stopwords
-        text = " ".join([lemmatizer.lemmatize(word) for word in text.split()])  # Lemmatization
-        return text
-    return ""
+# Convert the sentences to tokens
+grouped_u['text'] = grouped_u['text'].apply(lambda x: word_tokenize(x))
+grouped_i['text'] = grouped_i['text'].apply(lambda x: word_tokenize(x))
 
 
-df["user_review"] = df["user_review"].apply(clean_text)
-df["item_review"] = df["item_review"].apply(clean_text)
+# Represent the words as a fixed length; thus PAD or TRIM the tokens respectively
+def create_embeddings(review_text, max_length, embedding_dict):
+    if len(review_text) > max_length:
+        review_text = review_text[:max_length]
+    else:
+        review_text = review_text + (max_length-len(review_text))*['<PAD>']
+    
+    # Now that the length is unique, map the words from the embedding_dict
+    text_embeddings = np.array([embedding_dict[token] if token in embedding_dict else embedding_dict['<PAD>'] for token in review_text])
+    return text_embeddings
+    
 
-# Save cleaned dataset
-df.to_csv("amazon_appliances_cleaned.csv", index=False)
+# Create the Embeddings with max_length of 200 words for concatenated user reviews and 1000 words for concatenated item reviews
+grouped_u['text_embeddings'] = grouped_u['text'].apply(lambda x: create_embeddings(x, max_length=200, embedding_dict=embeds))
+grouped_i['text_embeddings'] = grouped_i['text'].apply(lambda x: create_embeddings(x, max_length=1000, embedding_dict=embeds))
 
-# %%
-df.head()
-
-# %%
-# Convert user id and item id to numerical indices as NNs don't support alphanumeric ASINs
-
-user2idx = {user: idx for idx, user in enumerate(df["user_id"].unique())}
-item2idx = {item: idx for idx, item in enumerate(df["asin"].unique())}
-
-df["user_id"] = df["user_id"].map(user2idx)
-df["asin"] = df["asin"].map(item2idx)
-
-df.to_csv("amazon_appliances_final.csv", index=False)
-
-# %%
-# Set parameters
-MAX_VOCAB_SIZE = 50000  # Maximum number of words in the vocabulary
-MAX_SEQUENCE_LENGTH = 300  # Maximum number of words per review
-
-# Initialize Tokenizer
-tokenizer = Tokenizer(num_words=MAX_VOCAB_SIZE, oov_token="<OOV>")
-tokenizer.fit_on_texts(df["user_review"].tolist() + df["item_review"].tolist())
-
-# Convert text to sequences
-df["user_review_seq"] = tokenizer.texts_to_sequences(df["user_review"])
-df["item_review_seq"] = tokenizer.texts_to_sequences(df["item_review"])
-
-# Pad sequences
-df["user_review_seq"] = list(pad_sequences(df["user_review_seq"], maxlen=MAX_SEQUENCE_LENGTH, padding="post"))
-df["item_review_seq"] = list(pad_sequences(df["item_review_seq"], maxlen=MAX_SEQUENCE_LENGTH, padding="post"))
-
-# Save tokenized dataset
-df.to_csv("amazon_appliances_tokenized.csv", index=False)
-
-# %%
-# Model Parameters
-EMBEDDING_DIM = 300  # Word embedding dimension
-FILTERS = 100  # Number of CNN filters
-KERNEL_SIZE = 3  # Convolution window size
-DENSE_UNITS = 128  # Fully connected layer units
-
-def cnn_block(input_layer):
-    x = Embedding(input_dim = MAX_VOCAB_SIZE, output_dim = EMBEDDING_DIM, input_length = MAX_SEQUENCE_LENGTH)(input_layer)
-    x = Conv1D(filters=FILTERS, kernel_size = KERNEL_SIZE, activation="relu")(x)
-    x = GlobalMaxPooling1D()(x)
-    x = Dense(DENSE_UNITS, activation="relu")(x)
-    return x
-
-user_input = Input(shape=(MAX_SEQUENCE_LENGTH, ), name="user_input")
-user_output = cnn_block(user_input)
-
-item_input = Input(shape=(MAX_SEQUENCE_LENGTH, ), name="item_input")
-item_output = cnn_block(item_input)
-
-merged = Concatenate()([user_output, item_output])
-merged = Dense(DENSE_UNITS, activation="relu")(merged)
-rating_prediction = Dense(1, activation="linear")(merged)
-
-deepconn_model = Model(inputs=[user_input, item_input], outputs=rating_prediction)
-
-deepconn_model.compile(optimizer="adam", loss="mse", metrics=["mae"])
-
-deepconn_model.summary()
-
-# %%
-# Train the model
-
-# df["user_review_seq"] = df["user_review_seq"].apply(lambda x: np.array(eval(x)))
-# df["item_review_seq"] = df["item_review_seq"].apply(lambda x: np.array(eval(x)))
-
-X_user = np.array(df["user_review_seq"].tolist()) 
-X_item = np.array(df["item_review_seq"].tolist()) 
-y = np.array(df["rating"])  
-
-# %%
-# Split the Data
-
-X_user_train, X_user_test, X_item_train, X_item_test, y_train, y_test = train_test_split(
-    X_user, X_item, y, test_size=0.2, random_state=42
-)
-
-# %%
-history = deepconn_model.fit(
-    [X_user_train, X_item_train], y_train,
-    validation_data = ([X_user_test, X_item_test], y_test),
-    epochs=5,
-    batch_size=128,
-    verbose=1
-)
-
-deepconn_model.save("deepconn_amazon_appliances.h5")
-
-# %%
-def round_to_nearest_half(pred):
-    return round(pred * 2)/2
-
-# %%
-# Model Evaluation
-
-y_pred = deepconn_model.predict([X_user_test, X_item_test])
-y_pred = np.array(list(map(lambda x: round_to_nearest_half(x), y_pred[:, 0])))
-
-mse = mean_squared_error(y_test, y_pred)
-mae = mean_absolute_error(y_test, y_pred)
+# Need to Encode the user_id and asin as well
+# user_id_encoding = {user: idx for idx, user in enumerate(grouped_u['user_id'])}
+# asin_encoding = {item: idx for idx, item in enumerate(grouped_i['asin'])}
 
 
-# %%
-# Plot the Loss Curve
+# # Data Splitting - 80% train, 10% val, 10% test
+# train_u, test_u = train_test_split(grouped_u, test_size=0.2, random_state=42)
+# valid_u, test_u = train_test_split(test_u, test_size=0.5, random_state=42)
 
-plt.plot(history.history["loss"], label="Training Loss")
-plt.plot(history.history["val_loss"], label="Validation Loss")
-plt.xlabel("Epochs")
-plt.ylabel("Loss (MSE)")
-plt.title("Training Progress (DeepCoNN)")
-plt.legend()
-plt.show()
+# # Split the grouped_i (item reviews) into train, validation, and test sets
+# train_i, test_i = train_test_split(grouped_i, test_size=0.2, random_state=42)
+# valid_i, test_i = train_test_split(test_i, test_size=0.5, random_state=42)
+
+user_x = torch.tensor(np.stack(grouped_u['text_embeddings'].values), dtype=torch.float)
+user_y = torch.tensor(grouped_u['rating'], dtype=torch.float)
+item_x = torch.tensor(np.stack(grouped_i['text_embeddings'].values), dtype=torch.float)
+item_y = torch.tensor(grouped_i['rating'], dtype=torch.float)
 
 
+# Preparing the embedding weight tensor
+embedding_dim = len(next(iter(embeds.values())))
+vocab_size = len(embeds)
+
+wtoi = {word: idx for idx, word in enumerate(embeds.keys())}
+embedding_matrix = np.zeros((vocab_size, embedding_dim))
+
+# Fill the matrix with pre trained embeddings
+for word, idx in wtoi.items():
+    vector = embeds.get(word)
+    if vector is not None:
+        embedding_matrix[idx] = vector
+
+# Create a tensor from the embedding matrix
+embedding_weight = torch.tensor(embedding_matrix, dtype=torch.float)
+
+
+
+# Trial at the DeepCoNN Neural Network Architecture in Python
+# Hyperparameters
+max_review_length_u = 200
+max_review_length_i = 1000
+embed_dim = 300
+t = [3, 5]                  # Kernel Width
+n1 = 100                    # Kernel Depth
+latent_factors = 50 
+fm_k = 10           # Number of factors in Factorization Machine
+reg_lambda = 2e-3   # Regularization Lambda
+batch_size = 100
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Convolution Max-Pooling Layer
+class ConvMaxLayer(torch.nn.Module):
+    '''
+        The independent layer for user review and item review
+    '''
+    def __init__(self, max_review_length, t, embed_dim, n1, latent_factors):
+        super().__init__()
+        self.max_review_length = max_review_length
+        # self.max_review_length_u = max_review_length_u
+        # self.max_review_length_i = max_review_length_i
+        self.t = t
+        self.embed_dim = embed_dim
+        self.n1 = n1
+        self.latent_factors = latent_factors
+
+        self.convs = torch.nn.ModuleList()
+        self.maxs = torch.nn.ModuleList()
+
+        # self.convs_u = torch.nn.ModuleList()
+        # self.maxs_u = torch.nn.ModuleList()
+
+        # self.convs_i = torch.nn.ModuleList()
+        # self.maxs_i = torch.nn.ModuleList()
+
+        for width in t:
+            self.convs.append(
+                torch.nn.Conv1d(
+                    in_channels = embed_dim,
+                    out_channels = n1,
+                    kernel_size = width,
+                    stride=1
+                )
+            )
+            self.maxs.append(
+                torch.nn.MaxPool1d(
+                    kernel_size = self.max_review_length - width + 1,
+                    stride=1
+                )
+            )
+        # for width in t:
+        #     self.convs_u.append(
+        #         torch.nn.Conv1d(
+        #             in_channels=embed_dim,
+        #             out_channels=n1,
+        #             kernel_size=width,
+        #             stride=1
+        #         )
+        #     )
+        #     self.maxs_u.append(
+        #         torch.nn.MaxPool1d(
+        #             kernel_size=self.max_review_length_u - width + 1,
+        #             stride=1
+        #         )
+        #     )
+
+        #     self.convs_i.append(
+        #         torch.nn.Conv1d(
+        #             in_channels=embed_dim,
+        #             out_channels=n1,
+        #             kernel_size=width,
+        #             stride=1
+        #         )
+        #     )
+        #     self.maxs_i.append(
+        #         torch.nn.MaxPool1d(
+        #             kernel_size=self.max_review_length_i - width + 1,
+        #             stride=1
+        #         )
+        #     )
+        
+        self.activation = torch.nn.ReLU()       # Shared activation function for user and item
+        self.full_connect = torch.nn.Linear(self.n1 * len(self.t), self.latent_factors)     # Shared fully connected layer
+
+    
+    def forward(self, review):
+        """
+            Input Shape: (Batch Size, Review Length, Word Embedding Size)
+            Output Shape: (Batch Size, Latent Factors Size)
+        """
+        # output_u = []
+        # output_i = []
+        # review_u = review_u.permute(0,2,1)
+        # for max_pool, conv in zip(self.maxs_u, self.convs_u):
+        #     out = self.activation(conv(review_u))
+        #     max_out = max_pool(out)
+        #     flatten_out = torch.flatten(max_out, start_dim=1)
+        #     output_u.append(flatten_out)
+
+        # for max_pool, conv in zip(self.maxs_i, self.convs_i):
+        #     out = self.activation(conv(review_i))
+        #     max_out = max_pool(out)
+        #     flatten_out = torch.flatten(max_out, start_dim=1)
+        #     output_i.append(flatten_out)
+
+        # conv_out_u = torch.cat(output_u, dim=1)
+        # conv_out_i = torch.cat(output_i, dim=1)
+
+        # conv_out = torch.cat([conv_out_u, conv_out_i], dim=1)
+        # latent = self.full_connect(conv_out)
+
+        output = []
+        review = review.permute(0,2,1)
+        for max_pool, conv in zip(self.maxs, self.convs):
+            out = self.activation(conv(review))
+            max_out = max_pool(out)
+            flatten_out = torch.flatten(max_out, stride=1)
+            output.append(flatten_out)
+        
+        conv_out = torch.cat(output, dim=1)
+        latent = self.full_connect(conv_out)
+
+        return latent
+    
+
+class FMLayer(torch.nn.Module):
+    """
+        Factorization Machine
+        Reference: https://www.kaggle.com/gennadylaptev/factorization-machine-implemented-in-pytorch
+        Input Shape: (Batch Size, Latent Factors Size * 2)
+        Output Shape: (Batch Size)
+    """
+
+    def __init__(self, latent_factors, fm_k):
+        super().__init__()
+        self.latent_factors = latent_factors
+        self.fm_k = fm_k
+        self.V = torch.nn.Parameter(torch.randn(self.latent_factors * 2, self.fm_k))
+        self.lin = torch.nn.Linear(self.latent_factors * 2, 1)
+
+    def forward(self, x):
+        s1_square = torch.matmul(x, self.V).pow(2).sum(1, keepdim=True)
+        s2 = torch.matmul(x.pow(2), self.V.pow(2)).sum(1, keepdim=True)
+
+        out_inter = 0.5 * (s1_square-s2)
+        out_lin = self.lin(out_inter)
+        out = out_inter + out_lin
+        return out
+    
+
+class DeepCoNN(nn.Module):
+    def __init__(self, embedding_weight, max_review_length_u, max_review_length_i, t, embed_dim, n1, latent_factors):
+        super().__init__()
+
+        self.embedding_weight = embedding_weight
+        self.max_review_length_u = max_review_length_u
+        self.max_review_length_i = max_review_length_i
+        self.t = t
+        self.embed_dim = embed_dim
+        self.n1 = n1
+        self.latent_factors = latent_factors
+
+
+        self.embedding = torch.nn.Embedding.from_pretrained(embedding_weight)
+        self.embedding.weight.requires_grad = False
+
+        self.user_layer = ConvMaxLayer(max_review_length_u, t, embed_dim, n1, latent_factors)
+        self.item_layer = ConvMaxLayer(max_review_length_i, t, embed_dim, n1, latent_factors)
+        self.share_layer = FMLayer()
+
+    def forward(self, user_review, item_review):
+        """
+            Input Shape: (Batch Size, Review Length)
+            Output ShapeL (Batch Size)
+        """
+
+        user_review = self.embedding(user_review)
+        item_review = self.embedding(item_review)
+        user_latent = self.user_layer(user_review)
+        item_latent = self.item_layer(item_review)
+        latent = torch.cat([user_latent, item_latent], dim=1)
+        predict = self.share_layer(latent)
+        return predict
+
+
+# An attempt at a basic training loop
+user_x, user_y, item_x, item_y = user_x.to(device), user_y.to(device), item_x.to(device), item_y.to(device)
+train_data = TensorDataset(user_x, item_x, user_y, item_y)
+train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
+
+model = DeepCoNN(embedding_weight, max_review_length_u, max_review_length_i, t, embed_dim, n1, latent_factors).to(device)
+criterion = torch.nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+num_epochs = 3
+for epoch in range(num_epochs):
+    model.train()
+    total_loss = 0
+
+    for user_batch, item_batch, user_labels, item_labels in train_loader:
+        optimizer.zero_grad()
+        predictions = model(user_batch, item_batch)
+        loss = criterion(predictions, user_labels)
+        loss.backward()
+        optimizer.step()
+        total_loss+=loss.item()
+    
+    avg_loss = total_loss/len(train_loader)
+    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
