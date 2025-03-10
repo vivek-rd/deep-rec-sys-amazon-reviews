@@ -15,7 +15,6 @@ from modeling.NRCMA import NRCMA, NRCMAConfig
 from utils import data_loading
 
 
-
 def seed_everything(seed=42):
     
     random.seed(seed)
@@ -34,8 +33,7 @@ def train(model, run):
     batches_trained = 0
     
     for i in range(epochs):
-        # TODO - remove below line
-        batches_trained = 0
+
         for index, batch in enumerate(train_dataloader):
             
             if batches_trained == max_iters:
@@ -51,12 +49,12 @@ def train(model, run):
             
             loss.backward()
             optimizer.step()
-            print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f}')
             
-            if batches_trained % eval_iters != 0 and batch != len(train_dataloader) - 1:
+            if batches_trained % eval_iters != 0 and index != len(train_dataloader) - 1:
                 run.log(metrics)
+                print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f}')
             
-            if batches_trained % eval_iters == 0 and batch != len(train_dataloader) - 1 and batches_trained!=0 :
+            if batches_trained % eval_iters == 0 and index != len(train_dataloader) - 1 and batches_trained != 0 :
                 val_loss = evaluate(model, val_dataloader)
                 metrics['val/val_loss'] = val_loss
                 print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f} | val loss - {val_loss:.4f}')
@@ -104,9 +102,9 @@ if __name__ == '__main__':
     wandb_model_version = "v0"
 
     retrain = False
-    load_local_ckpt = False
+    load_local_ckpt = True
     local_ckpt_path = "checkpoints/" + f"{wandb_model}_checkpoint_final.pt"
-    wandb_existing_run_name = "retrain_test_1"
+    wandb_existing_run_name = "retrain_test_3_Sun Mar  9 12:55:51 2025"
 
     api = wandb.Api()
     save_dir = 'checkpoints'
@@ -124,7 +122,8 @@ if __name__ == '__main__':
         # updated config is loaded with new key
         existing_run.config[str(key)] = config
         
-        run = wandb.init(entity=wandb_entity, project=wandb_project, id=run_id, resume="must")
+        run = wandb.init(entity=wandb_entity, project=wandb_project, id=run_id, resume="must", config=existing_run.config)
+        print(f'Resuming training for existing checkpoint')
         if not load_local_ckpt:
             artifact = run.use_artifact(f'{wandb_entity}/{wandb_project}/{wandb_model}:{wandb_model_version}', type='model')
             artifact_dir = artifact.download(root=save_dir)

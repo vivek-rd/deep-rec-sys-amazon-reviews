@@ -1,3 +1,4 @@
+import yaml
 import time
 import torch
 import nltk
@@ -36,7 +37,7 @@ def process_text(text, model='NRCMA'):
             else:
                 output[i, :] = embed_model['<unk>']
 
-    return torch.tensor(output)
+    return torch.from_numpy(output).to(torch.float32)
 
 # Train Dataset
 class NRCMARecSysDataset(Dataset):
@@ -56,8 +57,8 @@ class NRCMARecSysDataset(Dataset):
     self.item_reviews = defaultdict(list)
 
     for _, row in df.iterrows():
-        self.user_reviews[row['user_id']].append(row['text'])
-        self.item_reviews[row['parent_asin']].append(row['text'])
+        self.user_reviews[row['user_id']].append((row['user_id'], row['text']))
+        self.item_reviews[row['parent_asin']].append((row['user_id'], row['text']))
 
   def __len__(self):
     return len(self.df)
@@ -66,7 +67,7 @@ class NRCMARecSysDataset(Dataset):
     row = self.df.iloc[idx]
     user = row['user_id']
     item = row['parent_asin']
-    current_review = process_text(row['text'])
+    current_review = row['text']
     rating = row['rating']
 
     """
@@ -76,20 +77,23 @@ class NRCMARecSysDataset(Dataset):
 
     this means, everytime a batch is loaded, this group by will happen, that is an overhead.
     """
-    # Pre-grouped embeddings - what if user has same review text for different products? or different users give same review?
-    # user_embs = [emb for emb in self.user_reviews[user] if not torch.equal(emb, current_review)]
-    # item_embs = [emb for emb in self.item_reviews[item] if not torch.equal(emb, current_review)]
     
-    user_embs = [process_text(review) for review in self.user_reviews[user][:self.user_reviews_per_entity]]
-    item_embs = [process_text(review) for review in self.item_reviews[item][:self.item_reviews_per_entity]]
+    user_embs = [process_text(review[1]) for review in self.user_reviews[user][:self.user_reviews_per_entity] \
+                                        if current_review != review[1] and review[0] != user]
+    item_embs = [process_text(review[1]) for review in self.item_reviews[item][:self.item_reviews_per_entity] \
+                                        if current_review != review[1] and review[0] != item]
 
-    user_embs += [torch.zeros_like(current_review)] * (self.user_reviews_per_entity - len(user_embs))
-    item_embs += [torch.zeros_like(current_review)] * (self.item_reviews_per_entity - len(item_embs))
+    user_embs += [torch.zeros(words_per_sentence, embedding_dim)] * (self.user_reviews_per_entity - len(user_embs))
+    item_embs += [torch.zeros(words_per_sentence, embedding_dim)] * (self.item_reviews_per_entity - len(item_embs))
 
-    user_tower_input = torch.stack(user_embs)
-    item_tower_input = torch.stack(item_embs)
+    user_tower_input = torch.stack(user_embs).to(torch.float32)
+    item_tower_input = torch.stack(item_embs).to(torch.float32)
+    
+    user = torch.tensor([user], dtype=torch.int).squeeze(-1)
+    item = torch.tensor([item], dtype=torch.int).squeeze(-1)
+    rating = torch.tensor([rating], dtype=torch.float).squeeze(-1)
 
-    return user_tower_input, item_tower_input, torch.tensor(rating, dtype=torch.float), user, item
+    return user_tower_input, item_tower_input, rating, user, item
 
 # Validation and test Dataset
 class NRCMARecSysTestDataset(Dataset):
@@ -107,38 +111,43 @@ class NRCMARecSysTestDataset(Dataset):
         row = self.df.iloc[idx]
         user = row['user_id']
         item = row['parent_asin']
-        user_training_reviews = [process_text(review) for review in self.train_dataset.user_reviews[row['user_id']][:self.user_reviews_per_entity]]
-        item_training_reviews = [process_text(review) for review in self.train_dataset.item_reviews[row['parent_asin']][:self.item_reviews_per_entity]]
+        user_training_reviews = [process_text(review[1]) for review in self.train_dataset.user_reviews[row['user_id']][:self.user_reviews_per_entity]]
+        item_training_reviews = [process_text(review[1]) for review in self.train_dataset.item_reviews[row['parent_asin']][:self.item_reviews_per_entity]]
         
-        user_training_reviews += [torch.zeros_like(user_training_reviews[0])] \
+        user_training_reviews += [torch.zeros(words_per_sentence, embedding_dim)] \
                                     * (self.user_reviews_per_entity - len(user_training_reviews))
         
-        item_training_reviews += [torch.zeros_like(item_training_reviews[0])] \
+        item_training_reviews += [torch.zeros(words_per_sentence, embedding_dim)] \
                                     * (self.item_reviews_per_entity - len(item_training_reviews))
         
-        user_tower_input = torch.stack(user_training_reviews)
-        item_tower_input = torch.stack(item_training_reviews)
+        user_tower_input = torch.stack(user_training_reviews).to(torch.float32)
+        item_tower_input = torch.stack(item_training_reviews).to(torch.float32)
         
-        rating = row['rating']
+        user = torch.tensor([user], dtype=torch.int).squeeze(-1)
+        item = torch.tensor([item], dtype=torch.int).squeeze(-1)
+        rating = torch.tensor([row['rating']], dtype=torch.float).squeeze(-1)
 
-        return user_tower_input, item_tower_input, torch.tensor(rating, dtype=torch.float), user, item
-
+        return user_tower_input, item_tower_input, rating, user, item
 
 model = "NRCMA"
-batch_size = 16
+
+# load the current config file
+with open('config/nrcma.yaml') as f:
+    config = yaml.safe_load(f)
+
+batch_size = config['t']['batch_size']
+words_per_sentence = config['m']['words_per_sentence']
+sentences_per_review = 4
+user_reviews_per_entity = config['m']['user_reviews_per_entity']
+item_reviews_per_entity = config['m']['item_reviews_per_entity']
 
 embedding_dim = 300
-words_per_sentence = 12
-sentences_per_review = 4
-user_reviews_per_entity = 3
-item_reviews_per_entity = 35
-
 embed_model = downloader.load("word2vec-google-news-300")
-embed_model['<unk>'] = np.random.randn(embedding_dim)
+embed_model.add_vector('<unk>', np.random.randn(embedding_dim))
 
-train_df = load_data('train_df_with_text.csv')
-val_df = load_data('val_df_with_text.csv')
-test_df = load_data('test_df_with_text.csv')
+train_df = load_data('/Users/vivekrachakonda/Documents/Courses/Capstone/github/deep-rec-sys-amazon-reviews/utils/train_df_filtered.csv')
+val_df = load_data('/Users/vivekrachakonda/Documents/Courses/Capstone/github/deep-rec-sys-amazon-reviews/utils/val_df_filtered.csv')
+test_df = load_data('/Users/vivekrachakonda/Documents/Courses/Capstone/github/deep-rec-sys-amazon-reviews/utils/test_df_filtered.csv')
 
 user_ids = set(train_df['user_id'].dropna().unique())
 item_ids = set(train_df['parent_asin'].dropna().unique())
@@ -155,18 +164,22 @@ train_dataset = NRCMARecSysDataset(train_df, user_reviews_per_entity, item_revie
 val_dataset = NRCMARecSysTestDataset(val_df, train_dataset, user_reviews_per_entity, item_reviews_per_entity)
 test_dataset = NRCMARecSysTestDataset(test_df, train_dataset, user_reviews_per_entity, item_reviews_per_entity)
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
-val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+shuffle = False
+pin_memory = False
+num_workers = 0
+
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
+test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
 
 
-start = time.time()
+# start = time.time()
 
-for i, batch in enumerate(train_dataloader):
-    user_tower_input, item_tower_input, rating, user, item = batch
+# for i, batch in enumerate(train_dataloader):
+#     user_tower_input, item_tower_input, rating, user, item = batch
     
-    if i == 10:
-        break
+#     if i == 100:
+#         break
 
-end = time.time()
-print(f"Time taken for embedding - {(end-start)/60} mins")
+# end = time.time()
+# print(f"Time taken for embedding - {(end-start)/60} mins")

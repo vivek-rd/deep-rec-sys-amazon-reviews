@@ -140,6 +140,7 @@ if __name__=="__main__":
     
     nrcma_config = NRCMAConfig.from_config(config['model'])
     model = NRCMA(nrcma_config)
+    print(next(model.parameters()).dtype)
     user_input = torch.randn(32, 64, 16, 300)
     item_input = torch.randn(32, 64, 16, 300)
     user_id = torch.randint(0, nrcma_config.num_users, (32,))

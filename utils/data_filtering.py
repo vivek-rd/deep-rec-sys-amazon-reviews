@@ -1,6 +1,6 @@
 import pandas as pd
 
-def iterative_filter_dfs(train_df: pd.DataFrame, val_df: pd.DataFrame):
+def iterative_filter_dfs(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame):
     """
     Explanation:
 
@@ -41,15 +41,26 @@ def iterative_filter_dfs(train_df: pd.DataFrame, val_df: pd.DataFrame):
         (val_df['parent_asin'].isin(valid_items))
     ].copy()
     
-    return filtered_train, filtered_val
+    filtered_test = test_df[
+        (test_df['user_id'].isin(valid_users)) &
+        (test_df['parent_asin'].isin(valid_items))
+    ].copy()
+    
+    return filtered_train, filtered_val, filtered_test
 
 # Example usage:
 import pandas as pd
 
 full_train = pd.read_csv('train_df_with_text.csv')
 full_val = pd.read_csv('val_df_with_text.csv')
+full_test = pd.read_csv('test_df_with_text.csv')
 
-new_train_df, new_val_df = iterative_filter_dfs(full_train, full_val)
+new_train_df, new_val_df, new_test_df = iterative_filter_dfs(full_train, full_val, full_test)
+
+new_train_df.to_csv('train_df_filtered.csv', index=False)
+new_val_df.to_csv('val_df_filtered.csv', index=False)
+new_test_df.to_csv('test_df_filtered.csv', index=False)
+
 print(len(new_train_df), len(new_val_df))
 print(f'min user count - {min(new_train_df['user_id'].value_counts())}')
 print(f'min item count - {min(new_train_df['parent_asin'].value_counts())}')
