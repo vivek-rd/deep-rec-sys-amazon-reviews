@@ -12,7 +12,7 @@ import torch.optim as optim
 
 from torchinfo import summary
 from modeling.NRCMA import NRCMA, NRCMAConfig
-from utils import data_loading
+from utils import final_dataset
 
 
 def seed_everything(seed=42):
@@ -149,7 +149,8 @@ if __name__ == '__main__':
 
     seed_everything(42)
     nrcma_config = NRCMAConfig.from_config(config['m'])
-    model = NRCMA(nrcma_config)
+    glove_embeddings = torch.load('utils/required_embeddings.pt').to(torch.float32)
+    model = NRCMA(nrcma_config, glove_embeddings)
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
 
@@ -162,7 +163,7 @@ if __name__ == '__main__':
 
     summary(model)
 
-    train_dataloader, val_dataloader, test_dataloader = data_loading.train_dataloader, data_loading.val_dataloader, data_loading.test_dataloader
+    train_dataloader, val_dataloader, test_dataloader = final_dataset.train_dataloader, final_dataset.val_dataloader, final_dataset.test_dataloader
     train(model, run)
 
     test_loss = evaluate(model, test_dataloader)

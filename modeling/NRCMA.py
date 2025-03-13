@@ -15,6 +15,9 @@ class NRCMAConfig:
     id_embed_dim: int
     attention_vector_dim: int
     feature_vector_dim: int
+    words_per_sentence: int
+    user_reviews_per_entity: int
+    item_reviews_per_entity: int
 
     @staticmethod
     def from_config(config):
@@ -22,7 +25,7 @@ class NRCMAConfig:
 
 
 class NRCMA(nn.Module):
-    def __init__(self, config: NRCMAConfig):
+    def __init__(self, config: NRCMAConfig, glove_embeddings):
         super(NRCMA, self).__init__()
 
         # Extract all config parameters into local variables
@@ -35,6 +38,7 @@ class NRCMA(nn.Module):
         self.attention_vector_dim = config.attention_vector_dim
         self.feature_vector_dim = config.feature_vector_dim
         
+        self.word2vec = nn.Embedding.from_pretrained(glove_embeddings, freeze=True)
         self.user_embedding = nn.Embedding(self.num_users, self.id_embed_dim)
         self.item_embedding = nn.Embedding(self.num_products, self.id_embed_dim)
 
@@ -72,6 +76,9 @@ class NRCMA(nn.Module):
         
         user_embedding = self.user_embedding(user_id)
         item_embedding = self.item_embedding(item_id)
+        
+        user_input = self.word2vec(user_input.to(torch.int))
+        item_input = self.word2vec(item_input.to(torch.int))
 
         d_u = self.process_single_tower(user_input, item_embedding, tower='user')
         d_i = self.process_single_tower(item_input, user_embedding, tower='item')
@@ -139,10 +146,13 @@ if __name__=="__main__":
         config = yaml.safe_load(f)
     
     nrcma_config = NRCMAConfig.from_config(config['model'])
-    model = NRCMA(nrcma_config)
+    glove_embeddings = torch.load('required_embeddings.pt')
+    model = NRCMA(nrcma_config, glove_embeddings)
     print(next(model.parameters()).dtype)
+    
     user_input = torch.randn(32, 64, 16, 300)
     item_input = torch.randn(32, 64, 16, 300)
+    
     user_id = torch.randint(0, nrcma_config.num_users, (32,))
     item_id = torch.randint(0, nrcma_config.num_products, (32,))
     output = model(user_input, item_input, user_id, item_id)
