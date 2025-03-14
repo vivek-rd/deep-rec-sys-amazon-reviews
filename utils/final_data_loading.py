@@ -108,12 +108,12 @@ if __name__ == "__main__":
     user_ids = set(train_df['user_id'].dropna().unique())
     item_ids = set(train_df['parent_asin'].dropna().unique())
 
-    # user_codes = pd.CategoricalDtype(user_ids)
-    # item_codes = pd.CategoricalDtype(item_ids)
+    user_codes = pd.CategoricalDtype(user_ids)
+    item_codes = pd.CategoricalDtype(item_ids)
 
-    # for df in [train_df, val_df, test_df]:
-    #     df['user_id'] = df['user_id'].astype(user_codes).cat.codes
-    #     df['parent_asin'] = df['parent_asin'].astype(item_codes).cat.codes
+    for df in [train_df, val_df, test_df]:
+        df['user_id'] = df['user_id'].astype(user_codes).cat.codes
+        df['parent_asin'] = df['parent_asin'].astype(item_codes).cat.codes
 
     # Group users' reviews
     user_groups = train_df.groupby('user_id').indices  # dict: user_id -> list of row indices
