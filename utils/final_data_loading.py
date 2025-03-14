@@ -22,7 +22,7 @@ def process_list(text_list, max_reviews, words_per_sentence, model='NRCMA', sent
             # Following same logic when creating vocabulary, I think additional logic can be
             # added here to get more tokens into vectors - split tokens like "five-star" into five, star which would be present in the list 
             for j, word in enumerate(words[:words_per_sentence]):
-                if word in embed_model:
+                if word in word_to_index.keys():
                     final_output[i, j] = word_to_index[word]
                 elif word.lower() in word_to_index.keys():
                     final_output[i, j] = word_to_index[word.lower()]
@@ -33,11 +33,11 @@ def process_list(text_list, max_reviews, words_per_sentence, model='NRCMA', sent
         final_output = np.zeros((max_reviews, sentences_per_review, words_per_sentence))
         
         for i, text in enumerate(text_list[0:max_reviews]):
-            sentences = nltk.sent_tokenize(text)
-            for j, sentence in sentences[0:sentences_per_review]:
-                words = nltk.word_tokenize(sentence)
-                for k, word in words:
-                    if word in embed_model:
+            sentences = nltk.sent_tokenize(str(text))
+            for j, sentence in enumerate(sentences[0:sentences_per_review]):
+                words = nltk.word_tokenize(str(sentence))
+                for k, word in enumerate(words[0:words_per_sentence]):
+                    if word in word_to_index.keys():
                         final_output[i, j, k] = word_to_index[word]
                     elif word.lower() in word_to_index.keys():
                         final_output[i, j, k] = word_to_index[word.lower()]
@@ -108,12 +108,12 @@ if __name__ == "__main__":
     user_ids = set(train_df['user_id'].dropna().unique())
     item_ids = set(train_df['parent_asin'].dropna().unique())
 
-    user_codes = pd.CategoricalDtype(user_ids)
-    item_codes = pd.CategoricalDtype(item_ids)
+    # user_codes = pd.CategoricalDtype(user_ids)
+    # item_codes = pd.CategoricalDtype(item_ids)
 
-    for df in [train_df, val_df, test_df]:
-        df['user_id'] = df['user_id'].astype(user_codes).cat.codes
-        df['parent_asin'] = df['parent_asin'].astype(item_codes).cat.codes
+    # for df in [train_df, val_df, test_df]:
+    #     df['user_id'] = df['user_id'].astype(user_codes).cat.codes
+    #     df['parent_asin'] = df['parent_asin'].astype(item_codes).cat.codes
 
     # Group users' reviews
     user_groups = train_df.groupby('user_id').indices  # dict: user_id -> list of row indices
