@@ -11,8 +11,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 from torchinfo import summary
-from modeling.NRCMA import NRCMA, NRCMAConfig
-from utils import data_loading
+from HSACN import HSACN
+import final_dataset_HSACN as dataset
 
 
 
@@ -40,7 +40,7 @@ def train(model, run):
             """if batches_trained == max_iters:
                 break"""
             
-            user_tower_input, item_tower_input, ratings = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device)
+            user_tower_input, item_tower_input, true_rating = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device)
 
             optimizer.zero_grad(set_to_none=True)
             predicted_rating = model(user_tower_input, item_tower_input)
@@ -49,7 +49,7 @@ def train(model, run):
             
             loss.backward()
             optimizer.step()
-            print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f}')
+            #print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f}')
             
             if batches_trained % eval_iters != 0 and index != len(train_dataloader) - 1:
                 run.log(metrics)
@@ -94,10 +94,13 @@ def evaluate(model, dataloader):
 
 if __name__ == '__main__':
 
+    with open('hsacn.yaml') as f:
+        config = yaml.safe_load(f)
+
     wandb_entity = "kodati-sr-northeastern-university"
-    wandb_project = "deep_rec_sys_user_reviews"
-    wandb_run_name = "retrain_test_3"
-    wandb_tags = ["nrcma", wandb_run_name, "retrain"]
+    wandb_project = "RecSys"
+    wandb_run_name = config['l']["wandb_run_name"]
+    wandb_tags = ["hsacn", wandb_run_name, "train"]
     wandb_model = wandb_run_name + "_model"
     wandb_model_version = "v0"
 
@@ -108,10 +111,8 @@ if __name__ == '__main__':
 
     api = wandb.Api()
     save_dir = 'checkpoints'
+    os.makedirs(save_dir, exist_ok=True)
 
-    # load the current config file
-    with open('config/hsacn.yaml') as f:
-        config = yaml.safe_load(f)
 
     if retrain:
         # fetch run id; using run id fetch the config details and download the model
@@ -138,6 +139,7 @@ if __name__ == '__main__':
     eval_batches = config['t']['eval_batches']
     checkpoint_iters = config['t']['checkpoint_iters']
     max_iters = config['t']['max_iters']
+    batch_size = config['t']['batch_size']
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -147,8 +149,7 @@ if __name__ == '__main__':
         device = torch.device("cpu")
 
     seed_everything(42)
-    nrcma_config = NRCMAConfig.from_config(config['m'])
-
+    
     word_embedding_dim = config['m']['word_embedding_dim']
     words_per_sentence = config['m']['words_per_sentence']
     sentences_per_review = config['m']['sentences_per_review']   
@@ -158,8 +159,10 @@ if __name__ == '__main__':
     kernel_size = config['m']['kernel_size'] 
     hidden_dim = config['m']['hidden_dim'] 
 
+    glove_embeddings = torch.load('required_embeddings.pt').to(torch.float32)
+
     model = HSACN(word_embedding_dim, hidden_dim, kernel_size, num_heads, words_per_sentence,
-                            sentences_per_review, user_reviews_per_entity, item_reviews_per_entity)
+                            sentences_per_review, user_reviews_per_entity, item_reviews_per_entity, glove_embeddings)
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
 
@@ -172,14 +175,13 @@ if __name__ == '__main__':
 
     summary(model)
 
-    train_dataloader, val_dataloader, test_dataloader = data_loading.train_dataloader, data_loading.val_dataloader, data_loading.test_dataloader
+    train_dataloader, val_dataloader, test_dataloader = dataset.train_dataloader, dataset.val_dataloader, dataset.test_dataloader
     train(model, run)
 
     test_loss = evaluate(model, test_dataloader)
     run.summary['test/test_loss'] = test_loss
     print(f'Final test loss - {test_loss}')
 
-    os.makedirs(save_dir, exist_ok=True)
     checkpoint_path = os.path.join(save_dir, f"{wandb_model}_checkpoint_final.pt")
 
     torch.save({
