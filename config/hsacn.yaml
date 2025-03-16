@@ -1,0 +1,26 @@
+# m stands for model - i.e model parameters
+m:
+  word_embedding_dim: 300
+  words_per_sentence: 12   
+  sentences_per_review: 4      
+  user_reviews_per_entity: 3   
+  item_reviews_per_entity: 35
+  num_heads: 4  
+  kernel_size: 3
+  hidden_dim: 128
+
+# t stands for training - i.e training parameters
+t:
+  batch_size: 64
+  learning_rate: 0.001
+  num_epochs: 1
+  random_seed: 42
+  log_interval: 10
+  checkpoint_dir: "checkpoints/"
+  eval_iters: 1000 #logging metrics in wandb
+  eval_batches: 50 #if the eval set is too big, then only evaluate on some batches, not all 
+  checkpoint_iters: 500 #checkpointing the model
+  max_iters: 100 #for checking the timing, otherwise remove it
+
+l:
+  wandb_run_name: "refined_train_1"
