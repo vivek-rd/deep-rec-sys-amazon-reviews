@@ -78,7 +78,7 @@ val_df = pd.read_csv('utils/val_df_filtered.csv')
 test_df = pd.read_csv('utils/test_df_filtered.csv')
 
 user_tower_inputs = torch.load('utils/user_tower_input_NRCMA.pt')
-item_tower_inputs = torch.load('utils/user_tower_input_NRCMA.pt')
+item_tower_inputs = torch.load('utils/item_tower_input_NRCMA.pt')
 train_dataset = NRCMARecSysDataset(train_df, user_tower_inputs, item_tower_inputs)
 val_dataset = NRCMARecSysTestDataset(val_df, user_tower_inputs, item_tower_inputs)
 test_dataset = NRCMARecSysTestDataset(test_df, user_tower_inputs, item_tower_inputs)
