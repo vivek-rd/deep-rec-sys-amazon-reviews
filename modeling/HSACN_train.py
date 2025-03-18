@@ -35,15 +35,15 @@ def train(model, run):
     
     for i in range(epochs):
 
-        for index, (user_tower_input, item_tower_input, true_rating) in enumerate(train_dataloader):
+        for index, (user_tower_input, item_tower_input, true_rating, user_id, item_id) in enumerate(train_dataloader):
             
             """if batches_trained == max_iters:
                 break"""
             
-            user_tower_input, item_tower_input, true_rating = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device)
+            user_tower_input, item_tower_input, true_rating, user_id, item_id = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device), user_id.to(device), item_id.to(device)
 
             optimizer.zero_grad(set_to_none=True)
-            predicted_rating = model(user_tower_input, item_tower_input)
+            predicted_rating = model(user_id, item_id, user_tower_input, item_tower_input)
             loss = loss_fn(predicted_rating, true_rating.view(-1, 1))
             metrics = {'train/train_loss': loss.item()}
             
@@ -75,14 +75,14 @@ def evaluate(model, dataloader):
     total_error = 0.0
     batches_evaluated = 0
     
-    for index, (user_tower_input, item_tower_input, true_rating) in enumerate(dataloader):
+    for index, (user_tower_input, item_tower_input, true_rating, user_id, item_id) in enumerate(dataloader):
         
         # use this only for big data, not while using the sampled one
         """if batches_evaluated >= eval_batches:
             break"""
 
-        user_tower_input, item_tower_input, true_rating = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device)
-        predicted_rating = model(user_tower_input, item_tower_input)
+        user_tower_input, item_tower_input, true_rating, user_id, item_id = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device), user_id.to(device), item_id.to(device)
+        predicted_rating = model(user_id, item_id, user_tower_input, item_tower_input)
         error = loss_fn(predicted_rating, true_rating.view(-1, 1))
         total_error += error.item()
         
@@ -150,6 +150,8 @@ if __name__ == '__main__':
 
     seed_everything(42)
     
+    num_users= config['m']['num_users']
+    num_items= config['m']['num_items']
     word_embedding_dim = config['m']['word_embedding_dim']
     words_per_sentence = config['m']['words_per_sentence']
     sentences_per_review = config['m']['sentences_per_review']   
@@ -157,11 +159,13 @@ if __name__ == '__main__':
     item_reviews_per_entity = config['m']['item_reviews_per_entity'] 
     num_heads = config['m']['num_heads']   
     kernel_size = config['m']['kernel_size'] 
-    hidden_dim = config['m']['hidden_dim'] 
+    hidden_dim = config['m']['hidden_dim']
+    latent_dim = config['m']['latent_dim'] 
+
 
     glove_embeddings = torch.load('required_embeddings.pt').to(torch.float32)
 
-    model = HSACN(word_embedding_dim, hidden_dim, kernel_size, num_heads, words_per_sentence,
+    model = HSACN(num_users, num_items, word_embedding_dim, hidden_dim, latent_dim, kernel_size, num_heads, words_per_sentence,
                             sentences_per_review, user_reviews_per_entity, item_reviews_per_entity, glove_embeddings)
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
