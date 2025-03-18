@@ -33,6 +33,7 @@ class SequenceEncodingModule(nn.Module):
 
         # Feed-forward layer after attention (W_f, b_f)
         self.ff = nn.Linear(hidden_dim, hidden_dim)
+        self.dropout_ff = nn.Dropout(p=0.5)
 
         # Relative positional embeddings for keys and values.
         # Assumes a fixed maximum sequence length, obviously. For each (i, j) pair, we learn a vector in R^(d_h). Fancy.
@@ -91,6 +92,7 @@ class SequenceEncodingModule(nn.Module):
 
         z = z.transpose(1, 2).contiguous().view(batch, t, self.hidden_dim) # Concatenating all heads: from (batch, num_heads, t, d_h) to (batch, t, hidden_dim)
         z = F.relu(self.ff(z))                                             # feed-forward layer with ReLU (W_f and b_f in Equation (7) in paper) | shape: (batch, t, hidden_dim)
+        z = self.dropout_ff(z) 
 
         return z
     
@@ -208,6 +210,7 @@ class RatingPredictor(nn.Module):
         self.user_emb = nn.Embedding(num_users, latent_dim)  # ud
         self.item_emb = nn.Embedding(num_items, latent_dim)  # id
         self.predict_layer = nn.Linear(latent_dim, 1)
+        self.dropout_pred = nn.Dropout(p=0.5)
         
         self.user_bias = nn.Embedding(num_users, 1)
         self.item_bias = nn.Embedding(num_items, 1)
@@ -223,8 +226,9 @@ class RatingPredictor(nn.Module):
         u_final = ud + ur
         i_final = id + ir
 
-        # Element-wise interaction not concatenation dumbass
+        # Element-wise interaction, not concatenation dumbass
         h = u_final * i_final  # ⊙ operation
+        h = self.dropout_pred(h)
 
         rating_pred = self.predict_layer(h).squeeze(1)  # w_f^T h
         rating_pred += self.user_bias(user_id).squeeze(1)
@@ -246,10 +250,14 @@ class HSACN(nn.Module):
         self.rating_predictor = RatingPredictor(num_users, num_items, hidden_dim, latent_dim)
 
         self.word2vec = nn.Embedding.from_pretrained(glove_embeddings, freeze=True)
+        self.dropout_word = nn.Dropout(p=0.3)  # Dropout after word embedding layer
 
     def forward(self, user_id, item_id, user_input, item_input):
         user_input = self.word2vec(user_input.to(torch.int))
         item_input = self.word2vec(item_input.to(torch.int))
+
+        user_input = self.dropout_word(user_input) 
+        item_input = self.dropout_word(item_input)
         
         user_rep = self.user_encoder(user_input)  # (batch, hidden_dim)
         item_rep = self.item_encoder(item_input)  # (batch, hidden_dim)
