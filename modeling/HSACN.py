@@ -185,7 +185,7 @@ class HierarchicalEncoder(nn.Module):
     
 
 class RatingPredictor(nn.Module):
-    def __init__(self, rep_dim, hidden_size=64):
+    def __init__(self, rep_dim, hidden_size=32):
         super(RatingPredictor, self).__init__()
         self.fc1 = nn.Linear(rep_dim * 2, hidden_size)
         self.fc2 = nn.Linear(hidden_size, 1)  # Predicts a single rating value
@@ -197,23 +197,61 @@ class RatingPredictor(nn.Module):
         return rating
     
 
+class RatingPredictor(nn.Module):
+    def __init__(self, num_users, num_items, hidden_dim, latent_dim): 
+        super(RatingPredictor, self).__init__()
+
+        self.user_proj = nn.Linear(hidden_dim, latent_dim)
+        self.item_proj = nn.Linear(hidden_dim, latent_dim)
+
+        # Additional user and item embeddings the paper had, probably will improve performance
+        self.user_emb = nn.Embedding(num_users, latent_dim)  # ud
+        self.item_emb = nn.Embedding(num_items, latent_dim)  # id
+        self.predict_layer = nn.Linear(latent_dim, 1)
+        
+        self.user_bias = nn.Embedding(num_users, 1)
+        self.item_bias = nn.Embedding(num_items, 1)
+        self.global_bias = nn.Parameter(torch.zeros(1))  # bg
+
+    def forward(self, user_id, item_id, user_review_repr, item_review_repr):
+        ur = torch.relu(self.user_proj(user_review_repr))  # u_r
+        ir = torch.relu(self.item_proj(item_review_repr))  # i_r
+
+        ud = self.user_emb(user_id)  # u_d
+        id = self.item_emb(item_id)  # i_d
+
+        u_final = ud + ur
+        i_final = id + ir
+
+        # Element-wise interaction not concatenation dumbass
+        h = u_final * i_final  # ⊙ operation
+
+        rating_pred = self.predict_layer(h).squeeze(1)  # w_f^T h
+        rating_pred += self.user_bias(user_id).squeeze(1)
+        rating_pred += self.item_bias(item_id).squeeze(1)
+        rating_pred += self.global_bias  # b_u + b_v + b_g
+
+        return rating_pred
+
+    
+
 class HSACN(nn.Module):
-    def __init__(self, word_embedding_dim, hidden_dim, kernel_size, num_heads, words_per_sentence,
+    def __init__(self, num_users, num_items, word_embedding_dim, hidden_dim, latent_dim, kernel_size, num_heads, words_per_sentence,
                  sentences_per_review, user_reviews_per_entity, item_reviews_per_entity, glove_embeddings):
         super(HSACN, self).__init__()
         self.user_encoder = HierarchicalEncoder(word_embedding_dim, hidden_dim, kernel_size, num_heads,
                                                   words_per_sentence, sentences_per_review, user_reviews_per_entity)
         self.item_encoder = HierarchicalEncoder(word_embedding_dim, hidden_dim, kernel_size, num_heads,
                                                   words_per_sentence, sentences_per_review, item_reviews_per_entity)
-        self.rating_predictor = RatingPredictor(hidden_dim)
+        self.rating_predictor = RatingPredictor(num_users, num_items, hidden_dim, latent_dim)
 
         self.word2vec = nn.Embedding.from_pretrained(glove_embeddings, freeze=True)
 
-    def forward(self, user_input, item_input):
+    def forward(self, user_id, item_id, user_input, item_input):
         user_input = self.word2vec(user_input.to(torch.int))
         item_input = self.word2vec(item_input.to(torch.int))
         
         user_rep = self.user_encoder(user_input)  # (batch, hidden_dim)
         item_rep = self.item_encoder(item_input)  # (batch, hidden_dim)
-        rating = self.rating_predictor(user_rep, item_rep)  # (batch, 1)
+        rating = self.rating_predictor(user_id, item_id, user_rep, item_rep)  # (batch, 1)
         return rating
