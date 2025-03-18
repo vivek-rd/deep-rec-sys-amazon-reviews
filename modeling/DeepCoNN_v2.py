@@ -6,16 +6,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import gensim.downloader as downloader
-from keras.preprocessing.text import text_to_word_sequence
+import nltk
+from tensorflow.keras.preprocessing.text import text_to_word_sequence
 from nltk import word_tokenize
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 def get_list_dicts(file):
     return [json.loads(line) for line in open(file, "rt")]
 
-raw_data = get_list_dicts("/Users/rutvikdhopate/Downloads/Magazine_Subscriptions.jsonl")
+# raw_data = get_list_dicts("/Users/rutvikdhopate/Downloads/Magazine_Subscriptions.jsonl")
+raw_data = get_list_dicts("Magazine_Subscriptions.jsonl")
 df = pd.DataFrame(raw_data).loc[:,['user_id','asin','rating','text']]
+df = df.iloc[:500,:]
 # print(df.shape)
 df['text'] = df['text'].astype(str)
 df['text'] = df['text'].apply(lambda x: ' '.join(text_to_word_sequence(x)))
@@ -31,11 +34,11 @@ df.dropna(inplace=True)
 
 grouped_u = df.groupby('user_id').agg(
     text=('text', ' <SEP> '.join),  # Concatenate reviews for each user
-    avg_rating=('rating', 'mean')     # Calculate the average rating for each user
+    rating=('rating', 'mean')     # Calculate the average rating for each user
 ).reset_index()
 grouped_i = df.groupby('asin').agg(
     text=('text', ' <SEP> '.join),  # Concatenate reviews for each item
-    avg_rating=('rating', 'mean')     # Calculate the average rating for each item
+    rating=('rating', 'mean')     # Calculate the average rating for each item
 ).reset_index()
 
 # Number of Unique Users and Unique Items in the dataset
@@ -56,6 +59,7 @@ embeds['<SEP>'] = np.random.randn(300).astype(np.float32)
 embeds['<PAD>'] = np.zeros(300, dtype=np.float32)
 
 # Convert the sentences to tokens
+nltk.download('punkt_tab')
 grouped_u['text'] = grouped_u['text'].apply(lambda x: word_tokenize(x))
 grouped_i['text'] = grouped_i['text'].apply(lambda x: word_tokenize(x))
 
@@ -74,8 +78,9 @@ def create_embeddings(review_text, max_length, embedding_dict):
 
 # Create the Embeddings with max_length of 200 words for concatenated user reviews and 1000 words for concatenated item reviews
 grouped_u['text_embeddings'] = grouped_u['text'].apply(lambda x: create_embeddings(x, max_length=200, embedding_dict=embeds))
-grouped_i['text_embeddings'] = grouped_i['text'].apply(lambda x: create_embeddings(x, max_length=1000, embedding_dict=embeds))
+grouped_i['text_embeddings'] = grouped_i['text'].apply(lambda x: create_embeddings(x, max_length=200, embedding_dict=embeds))
 
+print("Checkpoint - Embeddings")
 # Need to Encode the user_id and asin as well
 # user_id_encoding = {user: idx for idx, user in enumerate(grouped_u['user_id'])}
 # asin_encoding = {item: idx for idx, item in enumerate(grouped_i['asin'])}
@@ -96,23 +101,27 @@ item_y = torch.tensor(grouped_i['rating'], dtype=torch.float)
 
 
 # Preparing the embedding weight tensor
-embedding_dim = len(next(iter(embeds.values())))
-vocab_size = len(embeds)
+embedding_dim = embeds.vector_size
+vocab_size = len(embeds.key_to_index)
 
-wtoi = {word: idx for idx, word in enumerate(embeds.keys())}
+wtoi = {word: idx for idx, word in enumerate(embeds.key_to_index.keys())}
 embedding_matrix = np.zeros((vocab_size, embedding_dim))
 
 # Fill the matrix with pre trained embeddings
 for word, idx in wtoi.items():
-    vector = embeds.get(word)
-    if vector is not None:
+    try:
+        # Try to get the vector for the word
+        vector = embeds[word]
         embedding_matrix[idx] = vector
+    except KeyError:
+        # If the word is not found, initialize with a random vector
+        embedding_matrix[idx] = np.random.randn(embedding_dim)
 
 # Create a tensor from the embedding matrix
 embedding_weight = torch.tensor(embedding_matrix, dtype=torch.float)
 
 
-
+print("Checkpoint - Embeddings 2")
 # Trial at the DeepCoNN Neural Network Architecture in Python
 # Hyperparameters
 max_review_length_u = 200
@@ -299,9 +308,11 @@ class DeepCoNN(nn.Module):
         predict = self.share_layer(latent)
         return predict
 
+print("Checkpoint - Architecture Done")
 
 # An attempt at a basic training loop
 user_x, user_y, item_x, item_y = user_x.to(device), user_y.to(device), item_x.to(device), item_y.to(device)
+print(user_x.shape, user_y.shape, item_x.shape, item_y.shape)
 train_data = TensorDataset(user_x, item_x, user_y, item_y)
 train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
@@ -310,6 +321,7 @@ model = DeepCoNN(embedding_weight, max_review_length_u, max_review_length_i, t, 
 criterion = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
+print("Checkpoint - Training Loop Reached")
 num_epochs = 3
 for epoch in range(num_epochs):
     model.train()

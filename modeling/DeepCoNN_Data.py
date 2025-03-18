@@ -251,7 +251,7 @@ class DeepCoNN(nn.Module):
         self.fm_k = fm_k
 
 
-        # self.embedding = torch.nn.Embedding.from_pretrained(embedding_weight)
+        # self.embedding = torch.nn.Embedding.from_pretrained(embedding_weight, freeze=True)
         # self.embedding.weight.requires_grad = False
 
         self.user_layer = ConvMaxLayer(max_review_length_u, t, embed_dim, n1, latent_factors)
@@ -299,7 +299,7 @@ def evaluate(model, dataloader):
 
 start = time.time()
 print(start)
-num_epochs = 1
+num_epochs = 5
 epoch_losses = {i:None for i in range(num_epochs)}
 best_val_loss = float('inf')
 max_batches = 1000
