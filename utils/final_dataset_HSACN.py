@@ -1,10 +1,10 @@
 import time
+import yaml
 import torch
 import zipfile
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
-
 
 
 class HSACNRecSysDataset(Dataset):
@@ -36,7 +36,7 @@ class HSACNRecSysDataset(Dataset):
     user_tower_input = self.user_tower_inputs[idx]
     item_tower_input = self.item_tower_inputs[idx]
 
-    return user_tower_input, item_tower_input, rating
+    return user_tower_input, item_tower_input, rating, user, item
 
 
 class HSACNRecSysTestDataset(Dataset):
@@ -69,7 +69,7 @@ class HSACNRecSysTestDataset(Dataset):
     user_tower_input = self.user_tower_inputs[train_user_idx]
     item_tower_input = self.item_tower_inputs[train_item_idx]
 
-    return user_tower_input, item_tower_input, rating
+    return user_tower_input, item_tower_input, rating, user, item
 
 
 train_df = pd.read_csv('train_df_filtered.csv')
@@ -91,10 +91,13 @@ val_dataset = HSACNRecSysTestDataset(val_df, user_tower_inputs, item_tower_input
 test_dataset = HSACNRecSysTestDataset(test_df, user_tower_inputs, item_tower_inputs)
 
 shuffle = False
-pin_memory = False
-num_workers = 0
+pin_memory = True
+num_workers = 3
 
-batch_size = 64
+with open('hsacn.yaml') as f:
+  config = yaml.safe_load(f)
+
+batch_size = config['t']['batch_size']
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
