@@ -184,7 +184,7 @@ class HierarchicalEncoder(nn.Module):
         return final_rep
     
 
-class RatingPredictor(nn.Module):
+"""class RatingPredictor(nn.Module):
     def __init__(self, rep_dim, hidden_size=32):
         super(RatingPredictor, self).__init__()
         self.fc1 = nn.Linear(rep_dim * 2, hidden_size)
@@ -194,7 +194,7 @@ class RatingPredictor(nn.Module):
         x = torch.cat([user_rep, item_rep], dim=-1)
         x = torch.relu(self.fc1(x))
         rating = self.fc2(x)
-        return rating
+        return rating"""
     
 
 class RatingPredictor(nn.Module):
