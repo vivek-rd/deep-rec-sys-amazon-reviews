@@ -34,7 +34,7 @@ model = HSACN(num_users, num_items, word_embedding_dim, hidden_dim, latent_dim, 
                         sentences_per_review, user_reviews_per_entity, item_reviews_per_entity, glove_embeddings)
 optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
 
-checkpoint = torch.load("")
+checkpoint = torch.load("/content/train_final_fr_model_checkpoint_final.pt")
 
 model.load_state_dict(checkpoint['model_state_dict'])
 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -48,16 +48,28 @@ else:
     device = torch.device("cpu")
 
 model = model.to(device)
+loss_fn = nn.MSELoss()
 
+total_error = 0
+batches_evaluated = 0
 
 with torch.no_grad():
     for user_tower_input, item_tower_input, true_rating, user_id, item_id in val_dataloader:
         user_tower_input, item_tower_input, true_rating, user_id, item_id = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device), user_id.to(device), item_id.to(device)
         predicted_rating = model(user_id, item_id, user_tower_input, item_tower_input)
+        predicted_rating = torch.clamp(predicted_rating, min=1.0, max=5.0)
+
+
+        error = loss_fn(predicted_rating, true_rating.view(-1, 1))
+        total_error += error.item()
+        batches_evaluated +=1
+
         predicted_ratings.extend(predicted_rating.cpu().numpy().flatten())
         true_ratings.extend(true_rating.cpu().numpy().flatten())
         user_ids.extend(user_id.cpu().numpy().flatten())
         item_ids.extend(item_id.cpu().numpy().flatten())
+    
+    avg_error = total_error / batches_evaluated
 
 results_df = pd.DataFrame({
     'user_id': user_ids,
@@ -66,5 +78,7 @@ results_df = pd.DataFrame({
     'predicted_rating': predicted_ratings
 })
 
-
 merged_df = pd.merge(val_df.reset_index(drop=True), results_df, on=['user_id', 'parent_asin'])
+merged_df.to_csv('merged_df.csv', index=False)
+
+print("avg MSE: ", avg_error)
