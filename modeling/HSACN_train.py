@@ -88,7 +88,7 @@ def evaluate(model, dataloader):
         
         batches_evaluated += 1
     
-    avg_error = total_error / eval_batches
+    avg_error = total_error / batches_evaluated
     return avg_error
 
 
