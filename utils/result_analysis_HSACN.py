@@ -7,10 +7,13 @@ import torch.optim as optim
 from HSACN import HSACN
 from final_dataset_HSACN import val_df, val_dataloader
 
+predicted_ratings = []
+true_ratings = []
+user_ids = []
+item_ids = []
 
 with open('hsacn.yaml') as f:
     config = yaml.safe_load(f)
-
 
 num_users= config['m']['num_users']
 num_items= config['m']['num_items']
@@ -29,6 +32,13 @@ glove_embeddings = torch.load('required_embeddings.pt').to(torch.float32)
 
 model = HSACN(num_users, num_items, word_embedding_dim, hidden_dim, latent_dim, kernel_size, num_heads, words_per_sentence,
                         sentences_per_review, user_reviews_per_entity, item_reviews_per_entity, glove_embeddings)
+optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
+
+checkpoint = torch.load("")
+
+model.load_state_dict(checkpoint['model_state_dict'])
+optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+model.eval()
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -37,19 +47,12 @@ elif torch.backends.mps.is_available():
 else:
     device = torch.device("cpu")
 
-
 model = model.to(device)
-optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
-
-
-predicted_ratings = []
-true_ratings = []
-user_ids = []
-item_ids = []
 
 
 with torch.no_grad():
     for user_tower_input, item_tower_input, true_rating, user_id, item_id in val_dataloader:
+        user_tower_input, item_tower_input, true_rating, user_id, item_id = user_tower_input.to(device), item_tower_input.to(device), true_rating.to(device), user_id.to(device), item_id.to(device)
         predicted_rating = model(user_id, item_id, user_tower_input, item_tower_input)
         predicted_ratings.extend(predicted_rating.cpu().numpy().flatten())
         true_ratings.extend(true_rating.cpu().numpy().flatten())
