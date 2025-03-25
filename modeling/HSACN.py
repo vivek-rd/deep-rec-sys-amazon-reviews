@@ -236,6 +236,8 @@ class RatingPredictor(nn.Module):
         rating_pred += self.item_bias(item_id).squeeze(1)
         rating_pred += self.global_bias  # b_u + b_v + b_g
 
+        rating_pred = 1 + 4 * torch.sigmoid(rating_pred) #scaling from 1 to 5, the max it was producing was 9.5 
+
         return rating_pred
 
     
