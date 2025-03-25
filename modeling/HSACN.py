@@ -1,4 +1,5 @@
 import math
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -263,3 +264,83 @@ class HSACN(nn.Module):
         item_rep = self.item_encoder(item_input)  # (batch, hidden_dim)
         rating = self.rating_predictor(user_id, item_id, user_rep, item_rep)  # (batch, 1)
         return rating
+
+
+if __name__ == "__main__":
+    batch_size = 64
+    user_reviews_per_entity = 3
+    item_reviews_per_entity = 35
+    sentences_per_review = 4
+    words_per_sentence = 12
+    word_embedding_dim = 300
+    hidden_dim = 150
+    latent_dim = 32
+    kernel_size = 3
+    num_heads = 2
+    num_users = 159965
+    num_items = 24546
+
+    glove_embeddings = torch.load('required_embeddings.pt')
+
+    user_input = torch.randn(batch_size, user_reviews_per_entity, sentences_per_review, words_per_sentence, word_embedding_dim)
+    item_input = torch.randn(batch_size, item_reviews_per_entity, sentences_per_review, words_per_sentence, word_embedding_dim)
+
+    user_ids = torch.randint(0, num_users, (batch_size,))
+    item_ids = torch.randint(0, num_items, (batch_size,))
+    true_rating = torch.randint(1, 6, (batch_size, 1), dtype=torch.float32)
+
+    model = HSACN(num_users=num_users, num_items=num_items, word_embedding_dim=word_embedding_dim, hidden_dim=hidden_dim, latent_dim=latent_dim, kernel_size=kernel_size, num_heads=num_heads, words_per_sentence=words_per_sentence, sentences_per_review=sentences_per_review, user_reviews_per_entity=user_reviews_per_entity, item_reviews_per_entity=item_reviews_per_entity, glove_embeddings=glove_embeddings)
+
+    def measure_time(func):
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            print(f"Time taken: {end_time - start_time} seconds")
+            return result
+        return wrapper
+
+    @measure_time
+    def encode_user(user_input):
+        return model.user_encoder(user_input)
+
+    @measure_time
+    def encode_item(item_input):
+        return model.item_encoder(item_input)
+
+    @measure_time
+    def predict_rating(user_rep, item_rep, user_id, item_id):
+        return model.rating_predictor(user_id, item_id, user_rep, item_rep)
+
+    user_rep = encode_user(user_input)
+    item_rep = encode_item(item_input)
+    rating = predict_rating(user_rep, item_rep, user_ids, item_ids)
+
+    loss_fn = nn.MSELoss()
+
+    @measure_time
+    def train_epoch(model, user_input, item_input, user_ids, item_ids):
+        user_rep = model.user_encoder(user_input)
+        item_rep = model.item_encoder(item_input)
+        predicted_rating = model.rating_predictor(user_ids, item_ids, user_rep, item_rep)
+
+        loss = loss = loss_fn(predicted_rating, true_rating.view(-1, 1))
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    def train_for_epochs(model, user_input, item_input, user_ids, item_ids, epochs):
+        total_time = 0
+        for epoch in range(epochs):
+            print(f"Epoch {epoch+1}")
+            start_epoch_time = time.time()
+            train_epoch(model, user_input, item_input, user_ids, item_ids)
+            end_epoch_time = time.time()
+            epoch_time = end_epoch_time - start_epoch_time
+            total_time += epoch_time
+            print(f"Epoch {epoch+1} time: {epoch_time} seconds\n")
+        print(f"Total training time for {epochs} epochs: {total_time} seconds")
+
+    
+    train_for_epochs(model, user_input, item_input, user_ids, item_ids, epochs=5)
