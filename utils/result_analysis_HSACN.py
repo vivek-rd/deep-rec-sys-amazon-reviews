@@ -61,10 +61,10 @@ with torch.no_grad():
 
 results_df = pd.DataFrame({
     'user_id': user_ids,
-    'item_id': item_ids,
+    'parent_asin': item_ids,
     'true_rating': true_ratings,
     'predicted_rating': predicted_ratings
 })
 
 
-merged_df = pd.merge(val_df.reset_index(drop=True), results_df, on=['user_id', 'item_id'])
+merged_df = pd.merge(val_df.reset_index(drop=True), results_df, on=['user_id', 'parent_asin'])
