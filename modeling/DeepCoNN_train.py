@@ -87,21 +87,21 @@ def evaluate(model, dataloader):
 if __name__ == '__main__':
     wandb_entity = "dhopate-r-northeastern-university"
     wandb_project = "ds_capstone_recsys"
-    wandb_run_name = "demo_run_1"
+    wandb_run_name = "gpu_run_e2_v1"
     wandb_tags = ["deepconn", wandb_run_name, "retrain"]
     wandb_model = wandb_run_name + "_model"
     wandb_model_version = "v0"
 
-    epochs = 5
-    max_review_length_u = 200
-    max_review_length_i = 1000
+    epochs = 10
+    max_review_length_u = 500
+    max_review_length_i = 2000
     embed_dim = 300
-    t = [3, 5]                  # Kernel Width
-    n1 = 100                    # Kernel Depth
+    t = [2, 4]                  # Kernel Width
+    n1 = 120                    # Kernel Depth
     latent_factors = 50 
     fm_k = 10           # Number of factors in Factorization Machine
-    learning_rate = 1e-4
-    reg_lambda = 1e-3   # Regularization Lambda
+    learning_rate = 1e-5
+    reg_lambda = 75e-3   # Regularization Lambda
     batch_size = 512
     config={"epochs":epochs, "max_review_length_u":max_review_length_u, "max_review_length_i":max_review_length_i,
             "embed_dim":embed_dim, "t":t, "n1":n1, "latent_factors":latent_factors, "fm_k":fm_k,
@@ -121,8 +121,10 @@ if __name__ == '__main__':
         device = torch.device("mps")  # macOS Metal Performance Shaders
     else:
         device = torch.device("cpu")
+
+    # device = torch.device("cpu")
     
-    print(f"Device: {device}")
+    print(f"Device in use: {device}")
 
     seed_everything(42)
     glove_embeddings = torch.load('data/required_embeddings.pt').to(torch.float32)
