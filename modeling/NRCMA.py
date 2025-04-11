@@ -38,7 +38,7 @@ class NRCMA(nn.Module):
         self.attention_vector_dim = config.attention_vector_dim
         self.feature_vector_dim = config.feature_vector_dim
         
-        self.word2vec = nn.Embedding.from_pretrained(glove_embeddings, freeze=True)
+        self.word2vec = nn.Embedding.from_pretrained(glove_embeddings, freeze=False)
         self.user_embedding = nn.Embedding(self.num_users, self.id_embed_dim)
         self.item_embedding = nn.Embedding(self.num_products, self.id_embed_dim)
 
@@ -80,18 +80,9 @@ class NRCMA(nn.Module):
         user_input = self.word2vec(user_input.to(torch.int))
         item_input = self.word2vec(item_input.to(torch.int))
 
-        d_u = self.process_single_tower(user_input, item_embedding, tower='user')
-        d_i = self.process_single_tower(item_input, user_embedding, tower='item')
-        o = torch.cat((d_u, d_i), dim=1)
-
-        # factorization machine
-        linear_part = self.fm_linear(o).squeeze(1) 
-        interaction = o.unsqueeze(2) * self.v
-        square_of_sum = (interaction.sum(dim=1) ** 2)  
-        sum_of_square = (interaction ** 2).sum(dim=1)
-
-        interaction_part = 0.5 * (square_of_sum - sum_of_square).sum(dim=1)
-        prediction = linear_part + interaction_part
+        d_u = self.process_single_tower(user_input, user_embedding, tower='user')
+        d_i = self.process_single_tower(item_input, item_embedding, tower='item')
+        prediction = self.factorization_machine(d_u, d_i)
         
         return prediction
 
@@ -139,7 +130,22 @@ class NRCMA(nn.Module):
 
         return d_u
 
+    def factorization_machine(self, d_u, d_i):
+        
+        o = torch.cat((d_u, d_i), dim=1)
+        
+        # factorization machine
+        linear_part = self.fm_linear(o).squeeze(1) 
+        interaction = o.unsqueeze(2) * self.v
+        square_of_sum = (interaction.sum(dim=1) ** 2)  
+        sum_of_square = (interaction ** 2).sum(dim=1)
 
+        interaction_part = 0.5 * (square_of_sum - sum_of_square).sum(dim=1)
+        prediction = linear_part + interaction_part
+        
+        return prediction
+    
+    
 if __name__=="__main__":
     
     with open('../config/nrcma.yaml') as f:

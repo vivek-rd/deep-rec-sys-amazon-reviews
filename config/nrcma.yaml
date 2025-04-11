@@ -4,12 +4,12 @@ m:
   # num_products: 71254
   num_users: 159965
   num_products: 24546
-  num_conv_filters: 80
-  kernel_size: 1
+  num_conv_filters: 60
+  kernel_size: 3
+  id_embed_dim: 16
+  attention_vector_dim: 64
+  feature_vector_dim: 16
   word_embed_dim: 300
-  id_embed_dim: 30
-  attention_vector_dim: 20
-  feature_vector_dim: 10
   words_per_sentence: 12
   user_reviews_per_entity: 3
   item_reviews_per_entity: 35
@@ -17,12 +17,12 @@ m:
 # t stands for training - i.e training parameters
 t:
   batch_size: 64
-  learning_rate: 0.001
+  learning_rate: 0.0008
   num_epochs: 3
   random_seed: 42
   log_interval: 10
   checkpoint_dir: "checkpoints/"
   eval_iters: 500
-  eval_batches: 50
+  eval_batches: None
   checkpoint_iters: 500
-  max_iters: 100
+  max_iters: None

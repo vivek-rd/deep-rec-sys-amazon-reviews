@@ -57,9 +57,9 @@ if __name__ == "__main__":
     model = args.model # model can be NRCMA or HSACN
     print(f'Creating embeddings for - {model}')
     
-    train_df = pd.read_csv('train_df_filtered.csv')
-    val_df = pd.read_csv('val_df_filtered.csv')
-    test_df = pd.read_csv('test_df_filtered.csv')
+    train_df = pd.read_csv('../data/train_df_filtered.csv')
+    val_df = pd.read_csv('../data/val_df_filtered.csv')
+    test_df = pd.read_csv('../data/test_df_filtered.csv')
     
     total_text = ' '.join(list(train_df['text'].astype('str')))
     unique_words = set(nltk.word_tokenize(total_text))
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     
     # save the required_embeddings, word_to_index, index_word
     required_embeddings = torch.from_numpy(required_embeddings)
-    torch.save(required_embeddings, 'required_embeddings.pt')
+    torch.save(required_embeddings, '../data/required_embeddings.pt')
     
     user_ids = set(train_df['user_id'].dropna().unique())
     item_ids = set(train_df['parent_asin'].dropna().unique())
@@ -112,21 +112,21 @@ if __name__ == "__main__":
     item_codes = pd.CategoricalDtype(item_ids)
 
     for df in [train_df, val_df, test_df]:
-        df['user_id'] = df['user_id'].astype(user_codes).cat.codes
-        df['parent_asin'] = df['parent_asin'].astype(item_codes).cat.codes
+        df['user_id_cat'] = df['user_id'].astype(user_codes).cat.codes
+        df['parent_asin_cat'] = df['parent_asin'].astype(item_codes).cat.codes
 
     # Group users' reviews
-    user_groups = train_df.groupby('user_id').indices  # dict: user_id -> list of row indices
-    item_groups = train_df.groupby('parent_asin').indices # dict: parent_asin -> list of row indices
+    user_groups = train_df.groupby('user_id_cat').indices  # dict: user_id -> list of row indices
+    item_groups = train_df.groupby('parent_asin_cat').indices # dict: parent_asin -> list of row indices
     
     max_user_reviews, max_item_reviews, words_per_sentence = 3, 35, 12
     sentences_per_review = 4 # for HSACN
     
-    val_df['train_user_idx'] = val_df.apply(lambda row: np.where(train_df['user_id'] == row['user_id'])[0][0], axis=1)
-    val_df['train_item_idx'] = val_df.apply(lambda row: np.where(train_df['parent_asin'] == row['parent_asin'])[0][0], axis=1)
+    val_df['train_user_idx'] = val_df.apply(lambda row: np.where(train_df['user_id_cat'] == row['user_id_cat'])[0][0], axis=1)
+    val_df['train_item_idx'] = val_df.apply(lambda row: np.where(train_df['parent_asin_cat'] == row['parent_asin_cat'])[0][0], axis=1)
     
-    test_df['train_user_idx'] = test_df.apply(lambda row: np.where(train_df['user_id'] == row['user_id'])[0][0], axis=1)
-    test_df['train_item_idx'] = test_df.apply(lambda row: np.where(train_df['parent_asin'] == row['parent_asin'])[0][0], axis=1)
+    test_df['train_user_idx'] = test_df.apply(lambda row: np.where(train_df['user_id_cat'] == row['user_id_cat'])[0][0], axis=1)
+    test_df['train_item_idx'] = test_df.apply(lambda row: np.where(train_df['parent_asin_cat'] == row['parent_asin_cat'])[0][0], axis=1)
     
     if model == 'NRCMA':
         
@@ -134,8 +134,8 @@ if __name__ == "__main__":
         item_tower_inputs = torch.zeros((len(train_df)), max_item_reviews, words_per_sentence)
 
         for i, row in train_df.iterrows():
-            all_user_indices = user_groups[row['user_id']]
-            all_item_indices = user_groups[row['parent_asin']]
+            all_user_indices = user_groups[row['user_id_cat']]
+            all_item_indices = user_groups[row['parent_asin_cat']]
             
             available_user_indices = [idx for idx in all_user_indices if idx != i] # excluding current review
             available_item_indices = [idx for idx in all_item_indices if idx != i] # excluding current review
@@ -152,8 +152,8 @@ if __name__ == "__main__":
         item_tower_inputs = torch.zeros((len(train_df)), max_item_reviews, sentences_per_review, words_per_sentence)
 
         for i, row in train_df.iterrows():
-            all_user_indices = user_groups[row['user_id']]
-            all_item_indices = user_groups[row['parent_asin']]
+            all_user_indices = user_groups[row['user_id_cat']]
+            all_item_indices = user_groups[row['parent_asin_cat']]
             
             available_user_indices = [idx for idx in all_user_indices if idx != i] # excluding current review
             available_item_indices = [idx for idx in all_item_indices if idx != i] # excluding current review
@@ -164,12 +164,12 @@ if __name__ == "__main__":
             user_tower_inputs[i] = process_list(user_text, max_user_reviews, words_per_sentence, model=model, sentences_per_review=sentences_per_review)
             item_tower_inputs[i] = process_list(item_text, max_item_reviews, words_per_sentence, model=model, sentences_per_review=sentences_per_review)
     
-    torch.save(user_tower_inputs, f'user_tower_input_{model}.pt')
-    torch.save(item_tower_inputs, f'item_tower_input_{model}.pt')
+    torch.save(user_tower_inputs, f'../data/user_tower_input_{model}.pt')
+    torch.save(item_tower_inputs, f'../data/item_tower_input_{model}.pt')
     
-    train_df.to_csv('train_df_filtered.csv', index=False)
-    val_df.to_csv('val_df_filtered.csv', index=False)
-    test_df.to_csv('test_df_filtered.csv', index=False)
+    train_df.to_csv('../data/train_df_filtered.csv', index=False)
+    val_df.to_csv('../data/val_df_filtered.csv', index=False)
+    test_df.to_csv('../data/test_df_filtered.csv', index=False)
     
     print(f'saved files succesfully!')
     

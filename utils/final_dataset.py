@@ -26,8 +26,9 @@ class NRCMARecSysDataset(Dataset):
   def __getitem__(self, idx):
     row = self.df.iloc[idx]
     
-    user = row['user_id']
-    item = row['parent_asin']
+    user = row['user_id_cat']
+    item = row['parent_asin_cat']
+    item_id = row['parent_asin'] # item_id will be a string
     rating = row['rating']
     
     user = torch.tensor([user], dtype=torch.int).squeeze(-1)
@@ -37,7 +38,7 @@ class NRCMARecSysDataset(Dataset):
     user_tower_input = self.user_tower_inputs[idx]
     item_tower_input = self.item_tower_inputs[idx]
 
-    return user_tower_input, item_tower_input, rating, user, item
+    return user_tower_input, item_tower_input, rating, user, item, item_id
 
 
 class NRCMARecSysTestDataset(Dataset):
@@ -57,8 +58,8 @@ class NRCMARecSysTestDataset(Dataset):
   def __getitem__(self, idx):
     row = self.test_df.iloc[idx]
     
-    user = row['user_id']
-    item = row['parent_asin']
+    user = row['user_id_cat']
+    item = row['parent_asin_cat']
     rating = row['rating']
     train_user_idx = row['train_user_idx']
     train_item_idx = row['train_item_idx']
@@ -73,33 +74,33 @@ class NRCMARecSysTestDataset(Dataset):
     return user_tower_input, item_tower_input, rating, user, item
 
 
-train_df = pd.read_csv('utils/train_df_filtered.csv')
-val_df = pd.read_csv('utils/val_df_filtered.csv')
-test_df = pd.read_csv('utils/test_df_filtered.csv')
+train_df = pd.read_csv('data/train_df_filtered.csv')
+val_df = pd.read_csv('data/val_df_filtered.csv')
+test_df = pd.read_csv('data/test_df_filtered.csv')
 
-user_tower_inputs = torch.load('utils/user_tower_input_NRCMA.pt')
-item_tower_inputs = torch.load('utils/item_tower_input_NRCMA.pt')
+user_tower_inputs = torch.load('data/user_tower_input_NRCMA.pt')
+item_tower_inputs = torch.load('data/item_tower_input_NRCMA.pt')
 train_dataset = NRCMARecSysDataset(train_df, user_tower_inputs, item_tower_inputs)
 val_dataset = NRCMARecSysTestDataset(val_df, user_tower_inputs, item_tower_inputs)
 test_dataset = NRCMARecSysTestDataset(test_df, user_tower_inputs, item_tower_inputs)
 
-shuffle = False
-pin_memory = False
+shuffle = True
+pin_memory = True
 num_workers = 0
 
-batch_size = 100
+batch_size = 512
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
 
-start = time.time()
+# start = time.time()
 
-for i, batch in enumerate(train_dataloader):
-    user_tower_input, item_tower_input, rating, user, item = batch
+# for i, batch in enumerate(train_dataloader):
+#     user_tower_input, item_tower_input, rating, user, item = batch
     
-    if i == 10:
-        break
+#     if i == 10:
+#         break
 
-end = time.time()
-print(f"Time taken for embedding - {(end-start)/60} mins")
+# end = time.time()
+# print(f"Time taken for embedding - {(end-start)/60} mins")

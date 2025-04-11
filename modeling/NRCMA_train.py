@@ -36,16 +36,29 @@ def train(model, run):
 
         for index, batch in enumerate(train_dataloader):
             
-            if batches_trained == max_iters:
+            if max_iters != 'None' and batches_trained == max_iters:
                 break
             
             optimizer.zero_grad(set_to_none=True)
-            user_tower_input, item_tower_input, true_rating, user, item = batch
+            user_tower_input, item_tower_input, true_rating, user, item, _ = batch
             user_tower_input, item_tower_input, true_rating, user, item = user_tower_input.to(device), \
             item_tower_input.to(device), true_rating.to(device), user.to(device), item.to(device) 
             predicted_rating = model(user_tower_input, item_tower_input, user, item)
             loss = loss_fn(predicted_rating, true_rating)
+            # Cap predictions between 1 and 5
+            # predicted_rating = torch.clamp(predicted_rating, min=1.0, max=5.0)
+            # loss_per_sample = loss_fn(predicted_rating, true_rating)
+            # weights = torch.where(true_rating <= 3, 
+            #           torch.tensor(2.0, device=true_rating.device), 
+            #           torch.tensor(1.0, device=true_rating.device))
+            
+            # # Multiply each sample's loss by its weight and take the mean
+            # loss = (loss_per_sample * weights).mean()
+            
+            # if index != 0:
             metrics = {'train/train_loss': loss.item()}
+            # else:
+            #     metrics['train/train_loss'] = loss.item()
             
             loss.backward()
             optimizer.step()
@@ -62,33 +75,56 @@ def train(model, run):
             
             batches_trained += 1
         
-        val_loss = evaluate(model, val_dataloader)
+        val_loss = evaluate(model, val_dataloader, print_predictions=True)
         metrics['val/val_loss'] = val_loss
         print(f'Epoch - {i} | step - {index} | train loss - {loss:.4f} | val loss - {val_loss:.4f}')
         run.log(metrics)
 
 
 @torch.no_grad()
-def evaluate(model, dataloader):
+def evaluate(model, dataloader, print_predictions=False):
     model.eval()
     total_error = 0.0
     batches_evaluated = 0
     
     for index, batch in enumerate(dataloader):
         
-        if batches_evaluated >= eval_batches:
+        if eval_batches != 'None' and batches_evaluated >= eval_batches:
             break
 
         user_tower_input, item_tower_input, true_rating, user, item = batch
         user_tower_input, item_tower_input, true_rating, user, item = user_tower_input.to(device), \
             item_tower_input.to(device), true_rating.to(device), user.to(device), item.to(device) 
         predicted_rating = model(user_tower_input, item_tower_input, user, item)
+        # Cap predictions between 1 and 5
+        predicted_rating = torch.clamp(predicted_rating, min=1.0, max=5.0)
         error = loss_fn(predicted_rating, true_rating)
+        
+        # error = loss_fn(predicted_rating, true_rating).mean()
+        # loss_per_sample = loss_fn(predicted_rating, true_rating)
+        # weights = torch.where(true_rating <= 3, 
+        #             torch.tensor(2.0, device=true_rating.device), 
+        #             torch.tensor(1.0, device=true_rating.device))
+            
+        # # Multiply each sample's loss by its weight and take the mean
+        # loss = (loss_per_sample * weights).mean()
+        
         total_error += error.item()
+        
+        if print_predictions:
+            # Determine the sample count: first 5 records (or fewer if batch is smaller)
+            sample_count = min(5, true_rating.size(0))
+            # Use slicing to vectorize the selection of predictions and actual ratings
+            sampled_preds = predicted_rating[:sample_count].cpu().numpy()
+            sampled_true = true_rating[:sample_count].cpu().numpy()
+            print(f"Batch {batches_evaluated} predictions (first {sample_count} records):")
+            print("Predicted ratings:", sampled_preds)
+            print("Actual ratings:   ", sampled_true) 
         
         batches_evaluated += 1
     
-    avg_error = total_error / eval_batches
+    avg_error = total_error / batches_evaluated
+    model.train()
     return avg_error
 
 
@@ -96,8 +132,8 @@ if __name__ == '__main__':
 
     wandb_entity = "rvivek-northeastern-university"
     wandb_project = "deep_rec_sys_user_reviews"
-    wandb_run_name = "retrain_test_3"
-    wandb_tags = ["nrcma", wandb_run_name, "retrain"]
+    wandb_run_name = "self_attention_word_embedding_tuning"
+    wandb_tags = ["self_attention", "best_test_loss"]
     wandb_model = wandb_run_name + "_model"
     wandb_model_version = "v0"
 
@@ -149,7 +185,7 @@ if __name__ == '__main__':
 
     seed_everything(42)
     nrcma_config = NRCMAConfig.from_config(config['m'])
-    glove_embeddings = torch.load('utils/required_embeddings.pt').to(torch.float32)
+    glove_embeddings = torch.load('data/required_embeddings.pt').to(torch.float32)
     model = NRCMA(nrcma_config, glove_embeddings)
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['t']['learning_rate'])
@@ -176,6 +212,7 @@ if __name__ == '__main__':
     torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
+            'model_config': config,
         }, checkpoint_path)
 
     run.log_model(f"./checkpoints/{wandb_model}_checkpoint_final.pt", name=wandb_model)
