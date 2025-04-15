@@ -89,10 +89,23 @@ jupyter notebook eda/Amazon_user_reviews_capstone.ipynb
 These notebooks cover preprocessing, data visualization, and statistical analysis of Amazon user reviews.
 
 ### 🔹 Model Training
-To train a model, navigate to the `modeling/` directory and run the corresponding Python script:
+Before training the model, the index tensor files need to be generated for users and items. To do that, run
 ```bash
-python modeling/DeepCoNN.py  # Example for DeepCoNN
+python -m utils.final_data_loading_HSACN
 ```
+Change the model name to get the files for each model respectively.
+
+To train a model, navigate to the `deep-recsys-amazon-reviews` directory and run the corresponding Python script:
+```bash
+python -m modeling.DeepCoNN_train.py  # DeepCoNN
+```
+```bash
+python -m modeling.HSACN_train.py     # HSACN
+```
+```bash
+python -m modeling.NRCMA_train.py     # NRCMA
+```
+
 Each script handles data loading, preprocessing, training, evaluation, and model saving. Refer to notebooks for additional details on hyperparameters and configurations.
 
 ---
