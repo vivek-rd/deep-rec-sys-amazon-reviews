@@ -97,13 +97,13 @@ Change the model name to get the files for each model respectively.
 
 To train a model, navigate to the `deep-recsys-amazon-reviews` directory and run the corresponding Python script:
 ```bash
-python -m modeling.DeepCoNN_train.py  # DeepCoNN
+python -m modeling.DeepCoNN_train  # DeepCoNN
 ```
 ```bash
-python -m modeling.HSACN_train.py     # HSACN
+python -m modeling.HSACN_train     # HSACN
 ```
 ```bash
-python -m modeling.NRCMA_train.py     # NRCMA
+python -m modeling.NRCMA_train     # NRCMA
 ```
 
 Each script handles data loading, preprocessing, training, evaluation, and model saving. Refer to notebooks for additional details on hyperparameters and configurations.
