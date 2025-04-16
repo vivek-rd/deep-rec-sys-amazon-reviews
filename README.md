@@ -1,130 +1,107 @@
-# Deep Recommendation Systems on Amazon Reviews
+# Deep Learning-Based Recommendation System
 
-This repository contains research implementations of deep recommendation systems utilizing Amazon reviews. It features multiple deep learning models that leverage review texts for rating prediction.
+## Project Goal
 
----
+This project implements and compares three different deep learning-based recommendation systems (DeepCoNN, NRCMA, and HSACN) that utilize the natural language of user reviews from the Amazon User Reviews dataset. The primary goal is to improve rating predictions and provide relevant product recommendations by leveraging the insights contained in review text. The system predicts user ratings for products and uses these predictions to rank relevant products based on a user's search query and past review history.
 
-## 📌 Project Overview
+## Tech Stack
 
-This project explores various deep learning approaches to recommendation systems by integrating textual features with collaborative filtering techniques. The implemented models include:
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
+![Weights & Biases](https://img.shields.io/badge/-W%26B-FFBE00?style=flat&logo=weightsandbiases&logoColor=black)  
+![NumPy](https://img.shields.io/badge/-NumPy-013243?style=flat&logo=numpy&logoColor=white)
+![Pandas](https://img.shields.io/badge/-Pandas-150458?style=flat&logo=pandas&logoColor=white)
+![NLTK](https://img.shields.io/badge/-NLTK-4d7a97?style=flat&logoColor=white)
+![HuggingFace Datasets](https://img.shields.io/badge/-Datasets-FFD21E?style=flat&logo=huggingface&logoColor=black)
+![Gensim](https://img.shields.io/badge/-Gensim-3498DB?style=flat&logoColor=white)
+![Surprise](https://img.shields.io/badge/-Surprise-FA8072?style=flat&logoColor=white)
+![Matplotlib](https://img.shields.io/badge/-Matplotlib-11557C?style=flat&logo=matplotlib&logoColor=white)
+![Torchinfo](https://img.shields.io/badge/-Torchinfo-EE4C2C?style=flat&logo=pytorch&logoColor=white)
+![TQDM](https://img.shields.io/badge/-TQDM-FFA500?style=flat&logoColor=white)
 
-### 🔹 **DeepCoNN**  
-A dual Convolutional Neural Network (CNN) model that processes separate user and item reviews, combining their representations for rating prediction.
+## Approach and Methodology
 
-### 🔹 **HSACN**  
-A hierarchical review embedding model that extracts n-gram features from reviews via convolutional operations while analyzing review statistics.
+### Models Implemented:
+1.  **DeepCoNN (Deep Co-Operative Neural Networks):** This model uses two parallel convolutional neural networks (CNNs), one for user reviews and one for item reviews. It extracts semantic features from review text using convolutions and max-pooling, then uses a Factorization Machine (FM) layer to model the interaction between user and item latent representations for rating prediction.
+2.  **NRCMA (Neural Recommendation with Cross-Modality Mutual Attention):** NRCMA improves upon the two-tower model by introducing cross-modality mutual attention mechanisms at both word and review levels. This allows the user and item encoders to exchange information, focusing on the most relevant words and reviews for a given user-item interaction. Embeddings are generated using pre-trained GloVe vectors and processed through CNNs before attention layers. The final prediction is made using an FM layer.
+3.  **HSACN (Hierarchical Self-attentive Convolution Network):** HSACN uses a hierarchical approach, encoding words into sentences, sentences into reviews, and reviews into final user/item representations. It combines CNNs for local feature extraction and self-attention mechanisms for aggregation at different levels (sentence, review, entity). This structure allows the model to weigh different parts of the text based on their importance.
 
-### 🔹 **NRCMA**  
-A model incorporating cross-attention mechanisms and factorization machines to capture complex interactions between textual review features and identity embeddings.
+### Data Processing Pipeline:
+- Raw review data filtered to include only unique user-item pairs.
+- Reviews embedded using pretrained word embeddings (Google-Word2Vec-300).
+- Data structured separately for each model’s specific requirements.
 
----
+### Training and Evaluation:
+- Models trained on Nvidia GPUs (V100-SXM2, T4) and Apple silicon (M1, M2).
+- Evaluated using Mean Squared Error (MSE).
 
-## 📂 Dataset Details
+## How to Run the Code
 
-The models are trained and evaluated using a subset of the publicly available **[Amazon Reviews 2023 dataset](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023)** from the McAuley-Lab. Specifically, the **"raw_review_Appliances"** subset is used for this project.
+### Step-by-step Guide
 
----
-
-## 📁 Repository Structure
-
-```
-├── deep-rec-sys-amazon-reviews/
-│   ├── pyproject.toml         # Project configuration and dependencies
-│   ├── uv.lock                # Environment lock file
-│   ├── assets/
-│   │   └── images/            # Visual assets, plots, and figures
-│   ├── eda/                   # Exploratory Data Analysis (EDA) notebooks
-│   │   ├── Amazon_user_reviews_capstone.ipynb
-│   │   ├── item_reviews.ipynb
-│   │   └── recsys_preprocessing.ipynb
-│   ├── modeling/              # Model implementations and training scripts
-│   │   ├── DeepCoNN.ipynb
-│   │   ├── DeepCoNN.py
-│   │   ├── HSACN.ipynb
-│   │   ├── HSACN.py
-│   │   ├── NRCMA.ipynb
-│   │   └── NRCMA.py
-```
-Each component is structured to separate data analysis from model development, ensuring clarity and ease of extension.
-
----
-
-## 🚀 Installation and Setup
-
-### 🔹 Clone the Repository
+1. **Clone the Repository**
 ```bash
-git clone https://github.com/your-username/deep-rec-sys-amazon-reviews.git
+git clone https://github.com/your-repo/deep-rec-sys-amazon-reviews.git
 cd deep-rec-sys-amazon-reviews
 ```
 
-### 🔹 Create a Virtual Environment
-It is recommended to use Python 3.12 or later in a virtual environment:
+2. **Set Up the Environment**
+- Ensure Python 3.12 is installed.
+- Create a virtual environment and install dependencies:
 ```bash
-python -m venv env
-source env/bin/activate  # On Windows: env\Scripts\activate
+python -m venv venv
+source venv/bin/activate
+pip install -r pyproject.toml
 ```
 
-### 🔹 Install Dependencies
-Install the required packages from `pyproject.toml` or `requirements.txt`:
+3. **Data Preparation**
+- Obtain the Amazon Reviews dataset (Appliances category) from [HuggingFace](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023).
+- Preprocess and filter the data using scripts in the `utils` folder:
 ```bash
-pip install -r requirements.txt
-```
-Alternatively, manually install key dependencies:
-```bash
-pip install gensim>=4.3.3 matplotlib>=3.10.0 nltk>=3.9.1 numpy<2.0.0 \
-            pandas>=2.2.3 scikit-learn>=1.6.1 surprise>=0.1 torch>=2.6.0 \
-            torchinfo>=1.8.0 torchvision>=0.21.0 tqdm>=4.67.1 wandb>=0.19.6
-```
-Ensure your Python version meets the required (>=3.12) specification.
-
----
-
-## ⚡ Running the Code
-
-### 🔹 Exploratory Data Analysis (EDA)
-Navigate to the `eda/` directory and open notebooks using Jupyter:
-```bash
-jupyter notebook eda/Amazon_user_reviews_capstone.ipynb
-```
-These notebooks cover preprocessing, data visualization, and statistical analysis of Amazon user reviews.
-
-### 🔹 Model Training
-Before training the model, the index tensor files need to be generated for users and items. To do that, run
-```bash
-python -m utils.final_data_loading_HSACN
-```
-Change the model name to get the files for each model respectively.
-
-To train a model, navigate to the `deep-recsys-amazon-reviews` directory and run the corresponding Python script:
-```bash
-python -m modeling.DeepCoNN_train  # DeepCoNN
-```
-```bash
-python -m modeling.HSACN_train     # HSACN
-```
-```bash
-python -m modeling.NRCMA_train     # NRCMA
+python utils/data_loading.py
 ```
 
-Each script handles data loading, preprocessing, training, evaluation, and model saving. Refer to notebooks for additional details on hyperparameters and configurations.
+4. **Model Training**
+- Train DeepCoNN, NRCMA, and HSACN models:
+```bash
+python -m modeling.DeepCoNN_train
+python -m modeling.NRCMA_train
+python -m modeling.HSACN_train
+```
 
----
+5. **Generate Embeddings**
+- Generate and store embeddings:
+```bash
+python inference/generate_embeddings.py
+```
 
-## 📚 Additional Resources
-For a deeper understanding of the algorithms, evaluation metrics, and experimental setup, visit the project’s website:  
-🔗 **[Project Website](https://recsys-user-reviews.github.io)**
+6. **Run the Application**
+- Launch the Streamlit app:
+```bash
+streamlit run app.py
+```
 
----
+## Requirements and Dependencies
+- Python 3.12
+- PyTorch
+- numpy, pandas, nltk, datasets, gensim, surprise, matplotlib, torchinfo, tqdm, wandb
+- Detailed dependencies available in `pyproject.toml`
 
-## 🤝 Contributing
-Contributions are welcome! If you’d like to improve the code, models, or documentation, feel free to open an issue or submit a pull request.
+## Results and Outputs
 
----
+- **Best Performing Model:** NRCMA, demonstrating improved user-item interaction modeling with cross-attention, achieving the lowest MSE loss of 1.57.
+- Evaluation results stored and visualized using Weights and Biases (W&B).
 
-## 📜 License
-This project is open source. Refer to the `LICENSE` file for details on usage and distribution rights.
+## Limitations
 
----
+- Evaluation limited to the 'Appliances' category.
+- Does not explicitly handle the cold-start problem for new users/items (< 2 reviews).
+- Computational cost, particularly for HSACN, might limit scalability.
 
-🔹 **Happy Coding! 🚀**
+## Further Development
+
+- Exploring additional architectures and enhancing scalability.
+- Integration of richer metadata for improved recommendation accuracy.
+
+For further details, please refer to the complete [Final Project Report](reports/Final_Project_Report.pdf).
 
