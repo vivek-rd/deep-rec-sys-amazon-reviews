@@ -1,0 +1,2 @@
+# Consider all Jupyter Notebooks as Python for Language Statistics
+*.ipynb linguist-language=Python
